@@ -65,7 +65,7 @@ def fig_e1(out):
         ax.set_xlim(-1, 26)
         # etykiety bezpośrednie na końcu linii, rozsunięte w pionie
         lo, hi = ax.get_ylim()
-        gap = 0.06 * (hi - lo)
+        gap = 0.09 * (hi - lo)
         last = None
         for y, v, x in sorted(ends):
             y = y if last is None else max(y, last + gap)
@@ -115,6 +115,11 @@ def fig_e2(out):
         ys = [float(r["total_adrenaline_mean"]) for r in rs]
         ax.scatter(xs, ys, color=COLORS[v], marker=MARKERS[v], s=40, edgecolor="white", linewidth=1,
                    label="%d odwiedzających" % v, zorder=3)
+    for form, name in FORM_PL.items():
+        xs = [float(r["isovist_area_mean_mean"]) for r in rows if r["bush_form"] == form]
+        if xs:
+            ax.annotate(name, (sum(xs) / len(xs), 1), xycoords=("data", "axes fraction"), ha="center", va="top",
+                        fontsize=9, color=MUTED)
     ax.set_xlabel("Średnie pole izowisty wzdłuż ścieżek (m²)", fontsize=9, color=MUTED)
     ax.set_ylabel("Σ adrenaliny phantoma (średnia)", fontsize=9, color=MUTED)
     ax.legend(frameon=False, fontsize=9)
@@ -148,6 +153,7 @@ def fig_e3(out):
     ax.set_xlabel("Elastyczność Σ adrenaliny (OAT ±20%)", fontsize=9, color=MUTED)
     ax.legend(frameon=False, fontsize=9, loc="lower right")
     ax.set_title("Wrażliwość stałych (krzewy przy skrzyżowaniach)", fontsize=11, color=INK, loc="left")
+    fig.text(0.01, -0.04, "Brak słupka = elastyczność 0 (kortyzol nie wpływa zwrotnie na adrenalinę).", fontsize=8, color=MUTED)
     save(fig, out, "fig_e3_elasticity")
 
 
