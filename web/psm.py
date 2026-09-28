@@ -351,20 +351,55 @@ def split_layers(features):
 OSM_PATH_TAGS = "footway|path|pedestrian|cycleway|track|steps|living_street|service|bridleway"
 
 
+# przeszkody zasłaniające widok: zarośla, zadrzewienia, żywopłoty, mury, szpalery drzew, budynki
+OSM_OBSTACLE_AREAS = ['["natural"~"^(scrub|wood)$"]', '["landuse"="forest"]', '["building"]']
+OSM_OBSTACLE_LINES = ['["barrier"~"^(hedge|wall)$"]', '["natural"="tree_row"]']
+
+
 def overpass_query(park_name, city="Wrocław"):
     """Zapytanie Overpass: park o nazwie zawierającej park_name w mieście city."""
     name = park_name.replace('"', "")
+    obs = "".join("way%s(area.p);relation%s(area.p);" % (f, f) for f in OSM_OBSTACLE_AREAS)
+    obs += "".join("way%s(area.p);" % f for f in OSM_OBSTACLE_LINES)
     return (
-        '[out:json][timeout:90];\n'
+        '[out:json][timeout:60];\n'
         'area["name"="%s"]["boundary"="administrative"]->.city;\n'
         '(way["leisure"="park"]["name"~"%s",i](area.city);'
         'relation["leisure"="park"]["name"~"%s",i](area.city);)->.parks;\n'
         '.parks map_to_area->.p;\n'
         '(way["highway"~"^(%s)$"](area.p);)->.roads;\n'
-        '(way["natural"="scrub"](area.p);way["barrier"="hedge"](area.p);'
-        'way["building"](area.p);way["natural"="tree_row"](area.p);)->.obs;\n'
-        '(.parks;.roads;.obs;);\nout geom;' % (city, name, name, OSM_PATH_TAGS)
+        '(%s)->.obs;\n'
+        '(.parks;.roads;.obs;);\nout geom;' % (city, name, name, OSM_PATH_TAGS, obs)
     )
+
+
+def assemble_rings(lines, tol=1e-7):
+    """Składa fragmenty (np. człony 'outer' relacji) w zamknięte pierścienie."""
+    lines = [list(l) for l in lines if len(l) >= 2]
+    rings = []
+    same = lambda a, b: abs(a[0] - b[0]) <= tol and abs(a[1] - b[1]) <= tol
+    while lines:
+        cur = lines.pop()
+        grown = True
+        while not same(cur[0], cur[-1]) and grown:
+            grown = False
+            for i, l in enumerate(lines):
+                if same(cur[-1], l[0]):
+                    cur += l[1:]
+                elif same(cur[-1], l[-1]):
+                    cur += l[::-1][1:]
+                elif same(cur[0], l[-1]):
+                    cur = l + cur[1:]
+                elif same(cur[0], l[0]):
+                    cur = l[::-1] + cur[1:]
+                else:
+                    continue
+                lines.pop(i)
+                grown = True
+                break
+        if len(cur) >= 4 and same(cur[0], cur[-1]):
+            rings.append(cur)
+    return rings
 
 
 def osm_to_features(osm):
@@ -379,10 +414,15 @@ def osm_to_features(osm):
             boundary.append(w)
         else:
             obs.append(w)
+    rel_obs = []
     for rel in (e for e in osm.get("elements", []) if e.get("type") == "relation"):
-        for m in rel.get("members", []):
-            if m.get("role") == "outer" and m.get("geometry"):
-                boundary.append({"geometry": m["geometry"], "nodes": [], "tags": {}})
+        outer = [[(g["lon"], g["lat"]) for g in m["geometry"]] for m in rel.get("members", [])
+                 if m.get("role") == "outer" and m.get("geometry")]
+        if rel.get("tags", {}).get("leisure") == "park":
+            for part in outer:
+                boundary.append({"geometry": [{"lon": x, "lat": y} for x, y in part], "nodes": [], "tags": {}})
+        else:
+            rel_obs.extend(assemble_rings(outer))
     use = {}
     for w in roads:
         for i, n in enumerate(w["nodes"]):
@@ -406,6 +446,8 @@ def osm_to_features(osm):
         else:
             # żywopłot / szpaler jako cienki wielokąt (linia blokuje widoczność tak samo)
             feats.append(("obstacles", [coords + coords[::-1][1:]]))
+    for ring in rel_obs:
+        feats.append(("obstacles", [ring]))
     for w in boundary:
         feats.append(("boundary", [[(g["lon"], g["lat"]) for g in w["geometry"]]]))
     return feats
@@ -567,6 +609,79 @@ def _point_seg_dist(p, a, b):
         return dist(p, a)
     t = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2))
     return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
+
+
+def _road_components(roads, snap=1e-3):
+    """Numer składowej spójnej dla każdej polilinii (węzły = końce polilinii)."""
+    parent = {}
+
+    def find(k):
+        while parent.setdefault(k, k) != k:
+            parent[k] = parent[parent[k]]
+            k = parent[k]
+        return k
+
+    key = lambda p: (round(p[0] / snap), round(p[1] / snap))
+    for pts in roads:
+        a, b = find(key(pts[0])), find(key(pts[-1]))
+        if a != b:
+            parent[a] = b
+    return [find(key(pts[0])) for pts in roads]
+
+
+def bridge_gaps(roads, gap=25.0, snap_end=1.0):
+    """Łączy rozłączne części sieci ścieżek krótkimi łącznikami (<= gap m).
+
+    W OSM chodniki i alejki często kończą się tuż przy innej ścieżce albo po drugiej stronie ulicy,
+    bez wspólnego węzła; bez łączników agenci chodziliby tylko po największym kawałku.
+    Zwraca (nowe polilinie, liczba dodanych łączników)."""
+    roads = [[tuple(p) for p in r] for r in roads if len(r) >= 2]
+    added = 0
+    while True:
+        comp = _road_components(roads)
+        if len(set(comp)) <= 1:
+            break
+        grid = {}
+        for ri, pts in enumerate(roads):
+            for k in range(len(pts) - 1):
+                a, b = pts[k], pts[k + 1]
+                for i in range(int(math.floor(min(a[0], b[0]) / gap)), int(math.floor(max(a[0], b[0]) / gap)) + 1):
+                    for j in range(int(math.floor(min(a[1], b[1]) / gap)), int(math.floor(max(a[1], b[1]) / gap)) + 1):
+                        grid.setdefault((i, j), []).append((ri, k))
+        best = None
+        for ri, pts in enumerate(roads):
+            for p in (pts[0], pts[-1]):
+                ci, cj = int(math.floor(p[0] / gap)), int(math.floor(p[1] / gap))
+                for di in (-1, 0, 1):
+                    for dj in (-1, 0, 1):
+                        for rj, k in grid.get((ci + di, cj + dj), ()):
+                            if comp[rj] == comp[ri]:
+                                continue
+                            a, b = roads[rj][k], roads[rj][k + 1]
+                            dx, dy = b[0] - a[0], b[1] - a[1]
+                            L2 = dx * dx + dy * dy
+                            t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2))
+                            q = (a[0] + t * dx, a[1] + t * dy)
+                            d = dist(p, q)
+                            if d <= gap and (best is None or d < best[0]):
+                                best = (d, p, rj, k, q)
+        if best is None:
+            break
+        d, p, rj, k, q = best
+        pts = roads[rj]
+        if dist(q, pts[0]) <= snap_end:
+            q = pts[0]
+        elif dist(q, pts[-1]) <= snap_end:
+            q = pts[-1]
+        else:
+            first = pts[:k + 1] + [q]
+            second = [q] + pts[k + 1:]
+            roads[rj] = [x for i, x in enumerate(first) if i == 0 or dist(x, first[i - 1]) > 1e-9]
+            roads.append([x for i, x in enumerate(second) if i == 0 or dist(x, second[i - 1]) > 1e-9])
+        if dist(p, q) > 1e-9:
+            roads.append([p, q])   # przy zerowej odległości wspólny węzeł powstaje z samego podziału
+        added += 1
+    return roads, added
 
 
 class SegIndex:
@@ -1065,10 +1180,13 @@ class Obstacles:
         self.cell = cell
         self.grid = {}
         self.bboxes = []
+        self.area_cells = {}   # komórki pokryte prostokątem otaczającym (duże wielokąty, np. zadrzewienia)
         for pi, rings in enumerate(polygons):
             pts = [p for r in rings for p in r]
-            self.bboxes.append((min(p[0] for p in pts), min(p[1] for p in pts),
-                                max(p[0] for p in pts), max(p[1] for p in pts)))
+            bb = (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts))
+            self.bboxes.append(bb)
+            for key in self._cells(*bb):
+                self.area_cells.setdefault(key, []).append(pi)
             for r in rings:
                 for k in range(len(r) - 1):
                     a, b = r[k], r[k + 1]
@@ -1084,7 +1202,7 @@ class Obstacles:
     def containing(self, p):
         out = set()
         for key in self._cells(p[0], p[1], p[0], p[1]):
-            for _a, _b, pi in self.grid.get(key, ()):
+            for pi in self.area_cells.get(key, ()):
                 if pi in out:
                     continue
                 x0, y0, x1, y1 = self.bboxes[pi]
@@ -1481,9 +1599,17 @@ class Model:
 # Wczytywanie danych do modelu (wspólne dla CLI i przeglądarki)
 # ---------------------------------------------------------------------------
 
-def load_inputs(roads_data=None, obstacles_data=None, roads_name="", obstacles_name=""):
-    """Bajty/tekst plików -> (roads, obstacles, boundary). Obsługuje .shp i .geojson/.json."""
+OSM_BRIDGE_GAP = 25.0
+LOAD_INFO = {}
+
+
+def load_inputs(roads_data=None, obstacles_data=None, roads_name="", obstacles_name="", bridge_gap=None):
+    """Bajty/tekst plików -> (roads, obstacles, boundary). Obsługuje .shp i .geojson/.json.
+
+    bridge_gap: łączenie rozłącznych części sieci (m); domyślnie OSM_BRIDGE_GAP dla danych z Overpass,
+    0 dla plików (np. SHP ze schematami A/B, które mają zostać jak w GAMA)."""
     roads, obstacles, boundary = [], [], []
+    is_osm = []
 
     def feats_of(data, name):
         if name.lower().endswith(".shp"):
@@ -1492,6 +1618,7 @@ def load_inputs(roads_data=None, obstacles_data=None, roads_name="", obstacles_n
         text = data.decode("utf-8") if isinstance(data, (bytes, bytearray)) else data
         obj = json.loads(text)
         if obj.get("elements") is not None:
+            is_osm.append(True)
             return osm_to_features(obj)
         return geojson_features(obj)
 
@@ -1511,6 +1638,12 @@ def load_inputs(roads_data=None, obstacles_data=None, roads_name="", obstacles_n
     roads, obstacles, boundary = split_layers(feats)
     if not roads:
         raise ValueError("w danych nie ma ścieżek (linii)")
+    gap = (OSM_BRIDGE_GAP if is_osm else 0.0) if bridge_gap is None else bridge_gap
+    LOAD_INFO.clear()
+    LOAD_INFO["parts_before"] = len(set(_road_components(roads)))
+    if gap > 0 and LOAD_INFO["parts_before"] > 1:
+        roads, LOAD_INFO["bridges"] = bridge_gaps(roads, gap)
+    LOAD_INFO["parts_after"] = len(set(_road_components(roads)))
     return roads, obstacles, boundary
 
 
@@ -1970,6 +2103,42 @@ def test_osm_conversion_splits_at_junctions():
 def test_query_mentions_park_and_city():
     q = overpass_query("Park Staszica")
     assert "Park Staszica" in q and "Wrocław" in q and "scrub" in q
+
+
+def test_bridge_gaps_joins_close_parts_only():
+    a = [(0.0, 0.0), (100.0, 0.0)]
+    b = [(50.0, 10.0), (50.0, 60.0)]      # koniec 10 m od środka linii a
+    c = [(300.0, 0.0), (400.0, 0.0)]      # 200 m dalej: zostaje osobno
+    roads, n = bridge_gaps([a, b, c], gap=25.0)
+    assert n == 1
+    assert len(set(_road_components(roads))) == 2
+    net = Network(roads, largest_component=True)
+    assert abs(net.total_len - (100 + 50 + 10)) < 1e-6   # a podzielona na dwie części + łącznik 10 m
+
+
+def test_assemble_rings_from_fragments():
+    rings = assemble_rings([[(0, 0), (1, 0), (1, 1)], [(0, 1), (0, 0)], [(1, 1), (0, 1)]])
+    assert len(rings) == 1 and len(rings[0]) == 5
+
+
+def test_osm_relation_obstacle_and_bridging():
+    lat0, m = 51.1, 1.0 / 111320.0
+    g = lambda x, y: {"lon": 17.0 + x * m / 0.628, "lat": lat0 + y * m}
+    osm = {"elements": [
+        {"type": "way", "id": 1, "nodes": [1, 2], "tags": {"highway": "footway"}, "geometry": [g(0, 0), g(100, 0)]},
+        {"type": "way", "id": 2, "nodes": [3, 4], "tags": {"highway": "footway"}, "geometry": [g(50, 8), g(50, 80)]},
+        {"type": "relation", "id": 9, "tags": {"natural": "wood", "type": "multipolygon"}, "members": [
+            {"type": "way", "role": "outer", "geometry": [g(60, 20), g(90, 20), g(90, 50)]},
+            {"type": "way", "role": "outer", "geometry": [g(90, 50), g(60, 50), g(60, 20)]}]},
+    ]}
+    roads, obstacles, _b = load_inputs(json.dumps(osm), None, "park.json")
+    assert len(obstacles) == 1
+    assert LOAD_INFO["parts_before"] == 2 and LOAD_INFO["parts_after"] == 1
+    obs = Obstacles(obstacles, cell=5.0)
+    xs = [p[0] for p in obstacles[0][0]]
+    ys = [p[1] for p in obstacles[0][0]]
+    centre = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+    assert obs.containing(centre) == {0}     # środek dużego wielokąta, daleko od jego krawędzi
 
 
 def test_bots_share_weighted_graph():
