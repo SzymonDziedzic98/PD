@@ -29,6 +29,34 @@ Symulacja zatrzymuje się po 10 000 cyklach; w cyklu 9999 wyniki są dopisywane 
   Workflow `.github/workflows/pages.yml` publikuje `web/` na GitHub Pages
   (jednorazowo: Settings → Pages → Source: „GitHub Actions”).
 
+### Rozszerzenia (pod artykuł do URBAN DESIGN International)
+
+Domyślne wartości nowych parametrów dają wyniki identyczne jak wcześniej (jak w GAMA).
+
+- `bot_graph`: `weighted` (jak w GAMA: boty chodzą po tym samym ważonym grafie, więc też omijają odcinki,
+  na których phantom się bał) albo `plain` (boty wybierają trasy tylko po długości).
+- `fear_scope`: `shared` (jak w GAMA) albo `individual` (każdy phantom ma własną pamięć strachu).
+- `planting = controlled`: sterowane nasadzenia przy stałej łącznej powierzchni krzewów (`bush_area_total`).
+  Część `bush_junction_share` stoi w narożnikach skrzyżowań, z krawędzią `bush_junction_distance` od węzła,
+  reszta wzdłuż ścieżek poza strefą skrzyżowania (`junction_zone`). Działa na każdej sieci (generowanej, OSM, SHP).
+- Mapa stresu na odcinkach (`edges.csv`): cykle phantoma, średnia adrenalina, suma czujności, epizody lęku.
+- Izowisty co `isovist_spacing` m wzdłuż ścieżek (promień = strefa publiczna) i korelacja rang Spearmana
+  widoczność–stres na odcinkach.
+- Analiza wrażliwości stałych: OAT (elastyczności przy ±10%) i LHS (korelacje Spearmana).
+
+```
+python web/psm.py --planting-experiment --distances 1,4,8,12 --shares 0,0.5,1 --repeat 10 --planting-seeds 5 \
+    --cycles 10000 --csv nasadzenia.csv --summary nasadzenia_srednie.csv
+python web/psm.py --planting-experiment --roads Staszica_SHP_sciezki_01.shp        # to samo na ścieżkach parku Staszica
+python web/psm.py --sensitivity oat --repeat 10 --cycles 10000 --summary oat.csv
+python web/psm.py --sensitivity lhs --samples 100 --cycles 10000 --summary lhs.csv
+python web/psm.py --run --isovist --edges edges.csv --set planting=controlled
+python web/psm.py --batch --sweep bot_graph=weighted,plain --sweep aversion_strength=0,5 --repeat 10
+```
+
+W przeglądarce: zakładka „Eksperymenty” (nasadzenia, przegląd parametrów, OAT, LHS) oraz warstwy mapy
+„średnia adrenalina phantoma” i „pole izowisty”.
+
 Źródła parku: park generowany (losowa siatka alejek z łukami, krzewy w narożnikach skrzyżowań i wzdłuż alejek),
 park z OpenStreetMap pobierany przez przeglądarkę (Park Staszica, Szczytnicki, Południowy, Grabiszyński, Zachodni
 albo dowolna nazwa we Wrocławiu) albo własne pliki `.shp`/`.geojson`.

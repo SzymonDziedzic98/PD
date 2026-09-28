@@ -220,7 +220,14 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
     <div class="displays">
       <figure class="display">
         <figcaption><h3>Park – ścieżki, krzewy, agenci</h3>
-          <span class="hint">czerwień ścieżki = pamięć strachu</span></figcaption>
+          <span class="controls">
+            <select id="layer" aria-label="Warstwa ścieżek">
+              <option value="fear">ścieżki: pamięć strachu</option>
+              <option value="stress">ścieżki: średnia adrenalina phantoma</option>
+              <option value="isovist">ścieżki: pole izowisty</option>
+            </select>
+            <button class="btn" id="btnIso" disabled>Policz izowisty</button>
+          </span></figcaption>
         <canvas class="map" id="map" width="900" height="700"></canvas>
         <div class="legend" style="margin-top:6px">
           <span style="--c: var(--phantom)">phantom (strefy publiczna i społeczna)</span>
@@ -228,6 +235,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
           <span style="--c: var(--bush)">przeszkody</span>
           <span style="--c: #d03020">znacznik strachu</span>
         </div>
+        <p class="hint" id="layerInfo"></p>
       </figure>
       <figure class="display">
         <figcaption><h3>Phantom 0 – psychofizjologia</h3></figcaption>
@@ -241,11 +249,12 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
     </div>
     <div class="panel">
       <h2>Pliki wynikowe</h2>
-      <p class="hint"><code>summary.csv</code> jak w GAMA (zapis w cyklu <code>end_cycle − 1</code>), szereg czasowy phantoma 0 oraz pamięć strachu na odcinkach.</p>
+      <p class="hint"><code>summary.csv</code> jak w GAMA (zapis w cyklu <code>end_cycle − 1</code>), szereg czasowy phantoma 0, pamięć strachu na odcinkach oraz mapa stresu i widoczności (<code>edges.csv</code>).</p>
       <div class="controls">
         <button class="btn" id="dlSummary" disabled>summary.csv</button>
         <button class="btn" id="dlSeries" disabled>timeseries.csv</button>
         <button class="btn" id="dlFear" disabled>fear_edges.csv</button>
+        <button class="btn" id="dlEdges" disabled>edges.csv (stres i izowisty)</button>
       </div>
     </div>
   </main>
@@ -254,22 +263,48 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 <!-- BATCH -->
 <section data-panel="batch" hidden>
   <div class="panel">
-    <h2>Przegląd siły awersji</h2>
-    <p class="hint">Każda kombinacja jest liczona z tymi samymi seedami powtórzeń (wspólne liczby losowe), na parku wybranym w zakładce Symulacja i z jej parametrami. Pełny przebieg GAMA to 10 000 cykli.</p>
+    <h2>Eksperymenty</h2>
+    <p class="hint">Liczone na parku i z parametrami z zakładki Symulacja. Warianty dzielą seedy powtórzeń (wspólne liczby losowe). Pełny przebieg GAMA to 10 000 cykli.</p>
     <div class="controls">
-      <div class="field wide"><label for="bAv">aversion_strength</label><input type="text" id="bAv" value="0, 2.5, 5, 10"></div>
-      <div class="field wide"><label for="bBots">bot_nb</label><input type="text" id="bBots" value="80"></div>
+      <div class="field wide"><label for="bMode">Rodzaj</label>
+        <select id="bMode">
+          <option value="planting">eksperyment nasadzeń (stała powierzchnia)</option>
+          <option value="sweep">przegląd parametrów</option>
+          <option value="oat">wrażliwość lokalna (OAT)</option>
+          <option value="lhs">wrażliwość globalna (LHS)</option>
+        </select></div>
+    </div>
+    <div class="controls" data-mode="planting">
+      <div class="field wide"><label for="bDist">Odstęp od skrzyżowań (m)</label><input type="text" id="bDist" value="1, 4, 8, 12"></div>
+      <div class="field wide"><label for="bShare">Udział w narożnikach</label><input type="text" id="bShare" value="0, 0.5, 1"></div>
+    </div>
+    <div class="controls" data-mode="sweep" hidden>
+      <div class="field wide"><label for="bP1">Parametr 1</label><select id="bP1"></select></div>
+      <div class="field wide"><label for="bV1">wartości</label><input type="text" id="bV1" value="0, 2.5, 5, 10"></div>
+      <div class="field wide"><label for="bP2">Parametr 2</label><select id="bP2"></select></div>
+      <div class="field wide"><label for="bV2">wartości</label><input type="text" id="bV2" value=""></div>
+    </div>
+    <div class="controls" data-mode="oat" hidden>
+      <div class="field"><label for="bDelta">Zmiana ±</label><input type="number" id="bDelta" step="any" value="0.1"></div>
+      <p class="hint">Każda stała z listy poniżej ±10% (dla wygaszania: szybkość 1 − c), elastyczność = względna zmiana wyniku / względna zmiana parametru.</p>
+    </div>
+    <div class="controls" data-mode="lhs" hidden>
+      <div class="field"><label for="bSamples">Próbki</label><input type="number" id="bSamples" min="5" value="40"></div>
+      <p class="hint">Hipersześcian łaciński w zakresach stałych; wynik: korelacja rang Spearmana parametr–wynik.</p>
+    </div>
+    <div class="controls">
       <div class="field"><label for="bRepeat">Powtórzenia</label><input type="number" id="bRepeat" min="1" value="3"></div>
       <div class="field"><label for="bCycles">Cykle</label><input type="number" id="bCycles" min="1" value="10000"></div>
       <div class="field"><label for="bSeed">Pierwszy seed</label><input type="number" id="bSeed" value="1"></div>
       <button class="btn primary" id="bRun">Uruchom</button>
       <button class="btn" id="bStop" disabled>Zatrzymaj</button>
     </div>
+    <p class="hint" id="bSpec"></p>
     <progress id="bProg" value="0" max="1"></progress>
     <p class="hint mono" id="bProgTxt">—</p>
     <div class="table-wrap" id="bSummary"></div>
     <div class="table-wrap" id="bTable"></div>
-    <div class="controls"><button class="btn" id="bDl" disabled>batch_results.csv</button></div>
+    <div class="controls"><button class="btn" id="bDl" disabled>results.csv</button><button class="btn" id="bDlSum" disabled>summary.csv</button></div>
   </div>
 </section>
 
@@ -295,6 +330,15 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
       <li>Przy niespójnej sieci agenci chodzą tylko po największej składowej (w GAMA agent bez trasy stałby w miejscu).</li>
       <li>GeoJSON i OSM w stopniach są rzutowane lokalnie na metry (odwzorowanie równoodległościowe).</li>
     </ul>
+    <h3>Rozszerzenia (domyślnie wyłączone, wyniki jak w GAMA)</h3>
+    <ul class="plain">
+      <li><b>Graf botów</b>: <code>weighted</code> jak w GAMA (boty też omijają odcinki, na których phantom się bał) albo <code>plain</code> (same długości).</li>
+      <li><b>Pamięć strachu</b>: <code>shared</code> jak w GAMA albo <code>individual</code> (każdy phantom wybiera trasę według własnej pamięci; przy jednym phantomie wyniki identyczne).</li>
+      <li><b>Nasadzenia sterowane</b>: krzewy o stałej łącznej powierzchni, część w narożnikach skrzyżowań (odstęp od węzła = zmienna projektowa), reszta wzdłuż ścieżek poza strefą skrzyżowania. Działa na każdej sieci, także OSM i SHP.</li>
+      <li><b>Mapa stresu</b>: średnia adrenalina, suma czujności i epizody lęku phantoma na każdym odcinku.</li>
+      <li><b>Izowisty</b>: pole widoczności (promień = strefa publiczna) co 5 m wzdłuż ścieżek i korelacja rang ze stresem na odcinkach.</li>
+      <li><b>Wrażliwość</b>: OAT (elastyczności przy ±10%) i LHS (korelacje Spearmana) dla stałych modelu.</li>
+    </ul>
     <h3>Park</h3>
     <p>Park generowany to siatka alejek z łukami i pętlą obwodową, z krzewami w narożnikach skrzyżowań (ślepe narożniki) i wzdłuż alejek. Park z OpenStreetMap pobiera przeglądarka bezpośrednio z Overpass API. Oryginalne pliki <code>Staszica_SHP_*.shp</code> można wczytać jako własne pliki.</p>
     <h3>Uruchamianie poza przeglądarką</h3>
@@ -304,7 +348,8 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 
 <script>
 "use strict";
-let py = null, DEFAULTS = {}, TYPES = {}, GUI = [], RESTART = new Set();
+let py = null, DEFAULTS = {}, TYPES = {}, GUI = [], RESTART = new Set(), CHOICES = {}, SENS = [];
+let isoVals = null;
 let running = false, hasModel = false, net = null, snap = null;
 let chart = null, histLen = 0;
 let osmJson = null, osmName = "";
@@ -386,6 +431,51 @@ def _load(roads_path, obs_path):
     _INPUTS = psm.load_inputs(rd, od, roads_path or "", obs_path or "")
     return json.dumps({"roads": len(_INPUTS[0]), "obstacles": len(_INPUTS[1])})
 
+def _clean(o):
+    # NaN (np. brak zmienności wyniku) -> null, bo JSON.parse nie przyjmuje NaN
+    if isinstance(o, float) and o != o:
+        return None
+    if isinstance(o, dict):
+        return {k: _clean(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_clean(v) for v in o]
+    return o
+
+def _plan(mode, spec_json, base_json):
+    spec = json.loads(spec_json)
+    base = json.loads(base_json)
+    rep, seed = int(spec["repeat"]), int(spec["seed"])
+    if mode == "planting":
+        plan = psm.planting_plan(spec["distances"], spec["shares"], rep, seed)
+    elif mode == "sweep":
+        plan = psm.batch_plan(spec["sweep"], rep, seed)
+    elif mode == "oat":
+        plan = psm.oat_plan(None, float(spec["delta"]), rep, seed, base)
+    else:
+        plan = psm.lhs_plan(None, int(spec["samples"]), seed)
+    return json.dumps(plan)
+
+def _row(i, overrides_json, label):
+    r = psm.result_row(i, _M, json.loads(overrides_json), label)
+    _BROWS.append(r)
+    return json.dumps(_clean(r))
+
+def _analyze(mode, keys_json, base_json):
+    if mode == "oat":
+        s = psm.oat_analysis(_BROWS, json.loads(base_json))
+    elif mode == "lhs":
+        s = psm.lhs_analysis(_BROWS)
+    else:
+        s = psm.group_summary(_BROWS, json.loads(keys_json))
+    global _BSUM
+    _BSUM = s
+    return json.dumps(_clean(s))
+
+def _iso():
+    c = _M.isovist_comparison()
+    return json.dumps(_clean({"iso": [round(v[0], 1) for v in _M.isovist_edges],
+                              "cmp": {k: round(v, 3) for k, v in c.items()}}))
+
 def _osm_geojson(path):
     raw = json.loads(open(path, encoding="utf-8").read())
     return json.dumps(psm.features_to_geojson(psm.osm_to_features(raw)))
@@ -394,6 +484,16 @@ def _osm_geojson(path):
   TYPES = JSON.parse(py.runPython("json.dumps({k: type(v).__name__ for k, v in psm.DEFAULTS.items()})"));
   GUI = JSON.parse(py.runPython("json.dumps(psm.GUI_PARAMETERS)"));
   RESTART = new Set(JSON.parse(py.runPython("json.dumps(sorted(psm.RESTART_KEYS))")));
+  CHOICES = JSON.parse(py.runPython("json.dumps(psm.CHOICES)"));
+  SENS = JSON.parse(py.runPython("json.dumps(list(psm.SENS_PARAMS))"));
+  const numKeys = Object.keys(DEFAULTS).filter((k) => ["int", "float", "NoneType"].includes(TYPES[k]));
+  for (const id of ["bP1", "bP2"]) {
+    const sel = $(id);
+    if (id === "bP2") sel.append(new Option("—", ""));
+    for (const k of numKeys) sel.append(new Option(k, k));
+  }
+  $("bP1").value = "aversion_strength";
+  $("bSpec").textContent = "Stałe w analizie wrażliwości: " + SENS.join(", ") + ".";
   buildForm();
   $("loading").hidden = true;
   await initModel();
@@ -406,7 +506,7 @@ function buildForm() {
   GUI.forEach(([cat, items], ci) => {
     const det = document.createElement("details");
     det.className = "cat";
-    det.open = ci < 1 || cat === "Awersja do tras";
+    det.open = ci < 1 || cat === "Awersja do tras" || cat === "Nasadzenia";
     const sum = document.createElement("summary");
     sum.textContent = cat;
     det.append(sum);
@@ -419,10 +519,17 @@ function buildForm() {
       const lab = document.createElement("label");
       lab.textContent = label;
       lab.htmlFor = "p_" + key;
-      const inp = document.createElement("input");
+      let inp;
+      if (CHOICES[key]) {
+        inp = document.createElement("select");
+        for (const o of CHOICES[key]) inp.append(new Option(o, o));
+        inp.value = v;
+        inp.dataset.kind = "choice";
+      } else inp = document.createElement("input");
       inp.id = "p_" + key;
       inp.dataset.key = key;
-      if (typeof v === "boolean") { inp.type = "checkbox"; inp.checked = v; inp.dataset.kind = "bool"; }
+      if (CHOICES[key]) { /* select */ }
+      else if (typeof v === "boolean") { inp.type = "checkbox"; inp.checked = v; inp.dataset.kind = "bool"; }
       else if (v === null) { inp.type = "number"; inp.step = "any"; inp.placeholder = "auto"; inp.dataset.kind = "opt"; }
       else if (TYPES[key] === "int") {
         inp.type = "number"; inp.step = "1"; inp.value = v; inp.dataset.kind = "int";
@@ -438,9 +545,10 @@ function buildForm() {
 
 function readParams() {
   const p = {};
-  document.querySelectorAll("#paramForm input").forEach((inp) => {
+  document.querySelectorAll("#paramForm input, #paramForm select").forEach((inp) => {
     const k = inp.dataset.key, kind = inp.dataset.kind;
-    if (kind === "bool") p[k] = inp.checked;
+    if (kind === "choice") p[k] = inp.value;
+    else if (kind === "bool") p[k] = inp.checked;
     else if (kind === "opt") p[k] = inp.value === "" ? null : parseFloat(inp.value);
     else if (kind === "int") p[k] = parseInt(inp.value || "0", 10);
     else p[k] = parseFloat(inp.value || "0");
@@ -541,7 +649,12 @@ async function initModel() {
   resetChart();
   $("stNet").textContent = (net.source === "generated" ? "generowany" : "z pliku") + ", " + net.n_edges + " odcinków, " + Math.round(net.length) + " m";
   if (net.n_components > 1) showMsg("Sieć ma " + net.n_components + " rozłączne części; agenci chodzą po największej.", "warn");
-  ["btnRun", "btnStep", "dlSummary", "dlSeries", "dlFear"].forEach((id) => $(id).disabled = false);
+  ["btnRun", "btnStep", "dlSummary", "dlSeries", "dlFear", "dlEdges", "btnIso"].forEach((id) => $(id).disabled = false);
+  isoVals = null;
+  const pi = net.planting;
+  $("layerInfo").textContent = pi && pi.n_bushes !== undefined
+    ? `Nasadzenia sterowane: ${pi.n_bushes} krzewów, ${pi.area} m² (cel ${pi.area_target} m²), w narożnikach ${Math.round(pi.junction_share * 100)}% (${pi.n_junctions} skrzyżowań).`
+    : "";
   sizeCanvas();
   refresh(JSON.parse(py.globals.get("_advance")(0)));
 }
@@ -623,12 +736,35 @@ function draw() {
   ctx.fillStyle = css("--bush");
   for (const o of net.obstacles) { poly(ctx, o, true); ctx.fill(); }
   const pathCol = css("--path");
+  const layer = $("layer").value;
+  let vals = null, vmax = 1;
+  let vmin = 0;
+  if (layer === "stress") vals = snap.edge_stress;
+  if (layer === "isovist" && isoVals) vals = isoVals;
+  if (vals) {
+    // skala min–max po odcinkach, żeby było widać różnice między nimi
+    const ok = vals.filter((v) => v !== null && v !== undefined);
+    vmin = ok.length ? Math.min(...ok) : 0;
+    vmax = ok.length ? Math.max(...ok) : 1;
+    if (vmax - vmin < 1e-9) vmax = vmin + 1;
+  }
   net.edges.forEach((e, i) => {
-    const f = snap.fear_memory[i];
     poly(ctx, e, false);
     ctx.lineWidth = Math.max(1.5 * dpr, 2 * s * 0.6);
     ctx.globalAlpha = net.active[i] ? 1 : 0.35;
-    ctx.strokeStyle = f > 0.001 ? `rgb(${Math.round(Math.min(255, 90 + f * 30))},${Math.round(Math.max(0, 60 - f * 12))},${Math.round(Math.max(0, 50 - f * 12))})` : pathCol;
+    if (layer === "fear") {
+      const f = snap.fear_memory[i];
+      ctx.strokeStyle = f > 0.001 ? `rgb(${Math.round(Math.min(255, 90 + f * 30))},${Math.round(Math.max(0, 60 - f * 12))},${Math.round(Math.max(0, 50 - f * 12))})` : pathCol;
+    } else if (vals && vals[i] !== null && vals[i] !== undefined) {
+      // stres: od szarego do czerwieni; izowista: od granatu (zasłonięte) do jasnego (otwarte)
+      const t = Math.min(1, Math.max(0, (vals[i] - vmin) / (vmax - vmin)));
+      ctx.strokeStyle = layer === "stress"
+        ? `hsl(${Math.round(40 - 40 * t)}, ${Math.round(20 + 70 * t)}%, ${Math.round(55 - 15 * t)}%)`
+        : `hsl(210, ${Math.round(70 - 40 * t)}%, ${Math.round(25 + 50 * t)}%)`;
+      ctx.lineWidth = Math.max(2.5 * dpr, 3 * s * 0.6);
+    } else {
+      ctx.strokeStyle = pathCol; ctx.globalAlpha = 0.3;
+    }
     ctx.stroke();
   });
   ctx.globalAlpha = 1;
@@ -682,81 +818,108 @@ function parseList(s, int) {
   return s.split(/[,;\s]+/).filter(Boolean).map((x) => int ? parseInt(x, 10) : parseFloat(x.replace(",", ".")));
 }
 
+function batchModeChanged() {
+  const m = $("bMode").value;
+  document.querySelectorAll("[data-mode]").forEach((el) => el.hidden = el.dataset.mode !== m);
+  $("bRepeat").value = m === "lhs" ? 1 : 3;
+}
+
+function castList(key, text) {
+  if (!key || !text.trim()) return null;
+  const vals = parseList(text, TYPES[key] === "int");
+  return vals.length ? vals : null;
+}
+
 async function runBatch() {
-  const av = parseList($("bAv").value, false), bots = parseList($("bBots").value, true);
+  const mode = $("bMode").value;
   const rep = Math.max(1, parseInt($("bRepeat").value, 10)), cycles = Math.max(1, parseInt($("bCycles").value, 10));
   const seed0 = parseInt($("bSeed").value || "1", 10);
   const kind = $("srcKind").value;
+  const base = readParams();
+  const spec = { repeat: rep, seed: seed0 };
+  let keys = [];
   try {
     if (kind === "files") await loadFiles();
     if (kind === "osm") {
       if (!osmJson) throw new Error("najpierw pobierz park z OSM");
       py.FS.writeFile("/tmp/osm.json", osmJson); py.globals.get("_load")("/tmp/osm.json", null);
     }
+    if (mode === "planting") {
+      spec.distances = parseList($("bDist").value, false); spec.shares = parseList($("bShare").value, false);
+      keys = ["bush_junction_distance", "bush_junction_share"];
+    } else if (mode === "sweep") {
+      spec.sweep = {};
+      const v1 = castList($("bP1").value, $("bV1").value), v2 = castList($("bP2").value, $("bV2").value);
+      if (!v1) throw new Error("podaj wartości parametru 1");
+      spec.sweep[$("bP1").value] = v1;
+      if (v2) spec.sweep[$("bP2").value] = v2;
+      keys = Object.keys(spec.sweep);
+    } else if (mode === "oat") spec.delta = parseFloat($("bDelta").value);
+    else spec.samples = parseInt($("bSamples").value, 10);
   } catch (e) { $("bProgTxt").textContent = "Błąd: " + e.message; return; }
-  const plan = [];
-  for (const a of av) for (const b of bots) for (let r = 0; r < rep; r++) plan.push({ a, b, seed: seed0 + r });
+  const plan = JSON.parse(py.globals.get("_plan")(mode, JSON.stringify(spec), JSON.stringify(base)));
   batchStop = false;
-  $("bRun").disabled = true; $("bStop").disabled = false; $("bDl").disabled = true;
+  $("bRun").disabled = true; $("bStop").disabled = false; $("bDl").disabled = true; $("bDlSum").disabled = true;
   $("bProg").max = plan.length; $("bProg").value = 0;
-  py.runPython("_BROWS = []");
+  py.runPython("_BROWS = []; _BSUM = []");
   const rows = [];
   const t0 = performance.now();
+  let failed = "";
+  try {
   for (let i = 0; i < plan.length && !batchStop; i++) {
-    const { a, b, seed } = plan[i];
-    const params = Object.assign(readParams(), { aversion_strength: a, bot_nb: b, end_cycle: cycles });
-    py.globals.get("_init")(JSON.stringify(params), String(seed), kind !== "generated");
+    const [over, seed, label] = plan[i];
+    const params = Object.assign({}, base, over, { end_cycle: cycles });
+    try {
+      py.globals.get("_init")(JSON.stringify(params), String(seed), kind !== "generated");
+    } catch (e) { throw e; }
+    const desc = Object.entries(over).map(([k, v]) => `${k}=${typeof v === "number" ? +v.toFixed(4) : v}`).join(" · ");
     let done = false;
     while (!done && !batchStop) {
       done = py.runPython("_M.run(500); _M.cycle >= _M.p['end_cycle']");
-      $("bProgTxt").textContent = `przebieg ${i + 1}/${plan.length} · aversion ${a} · bot_nb ${b} · seed ${seed} · cykl ${py.runPython("_M.cycle")}`;
+      $("bProgTxt").textContent = `przebieg ${i + 1}/${plan.length} · ${desc || label} · seed ${seed} · cykl ${py.runPython("_M.cycle")}`;
       await tick();
     }
     if (batchStop) break;
-    rows.push(JSON.parse(py.runPython(`import json as _j; _r = psm.batch_row(${i}, _M); _BROWS.append(_r); _j.dumps(_r)`)));
+    rows.push(JSON.parse(py.globals.get("_row")(i, JSON.stringify(over), label)));
     $("bProg").value = i + 1;
-    renderBatch(rows);
+    renderBatch(mode, rows, keys, base);
   }
+  } catch (e) { failed = (e.message || String(e)).split("\n").slice(-2).join(" "); }
   const secs = ((performance.now() - t0) / 1000).toFixed(0);
-  $("bProgTxt").textContent = (batchStop ? "Zatrzymano" : "Gotowe") + ` · ${rows.length}/${plan.length} przebiegów · ${secs} s`;
-  batchCsv = py.runPython("psm.rows_csv(psm.BATCH_HEADER, _BROWS)");
-  $("bRun").disabled = false; $("bStop").disabled = true; $("bDl").disabled = rows.length === 0;
+  $("bProgTxt").textContent = (failed ? "Błąd: " + failed : batchStop ? "Zatrzymano" : "Gotowe") + ` · ${rows.length}/${plan.length} przebiegów · ${secs} s`;
+  batchCsv = py.runPython("psm.dict_rows_csv(_BROWS)");
+  $("bRun").disabled = false; $("bStop").disabled = true; $("bDl").disabled = rows.length === 0; $("bDlSum").disabled = rows.length === 0;
   hasModel = false;
   await initModel();
 }
 
-function renderBatch(rows) {
-  const H = JSON.parse(py.runPython("json.dumps(psm.BATCH_HEADER)"));
-  const table = (head, body) => {
-    const t = document.createElement("table");
-    const tr = document.createElement("tr");
-    head.forEach((h) => { const th = document.createElement("th"); th.textContent = h; th.className = "num"; tr.append(th); });
-    t.append(tr);
-    body.forEach((r) => {
-      const row = document.createElement("tr");
-      r.forEach((v) => { const td = document.createElement("td"); td.className = "num"; td.textContent = v; row.append(td); });
-      t.append(row);
+function dictTable(rows) {
+  const t = document.createElement("table");
+  if (!rows.length) return t;
+  const keys = [];
+  rows.forEach((r) => Object.keys(r).forEach((k) => { if (!keys.includes(k)) keys.push(k); }));
+  const tr = document.createElement("tr");
+  keys.forEach((h) => { const th = document.createElement("th"); th.textContent = h; th.className = "num"; tr.append(th); });
+  t.append(tr);
+  rows.forEach((r) => {
+    const row = document.createElement("tr");
+    keys.forEach((k) => {
+      const td = document.createElement("td"); td.className = "num";
+      const v = r[k];
+      td.textContent = v === null || v === undefined ? "" : typeof v === "number" ? +v.toFixed(4) : v;
+      row.append(td);
     });
-    return t;
-  };
-  $("bTable").replaceChildren(table(H, rows));
-  // średnie wg (aversion_strength, bot_nb)
-  const groups = new Map();
-  for (const r of rows) {
-    const k = r[2] + "|" + r[3];
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push(r);
-  }
-  const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
-  const sd = (a) => { const m = mean(a); return a.length > 1 ? Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1)) : 0; };
-  const summ = [...groups.values()].map((g) => {
-    const col = (i) => g.map((r) => r[i]);
-    const f = (i, d = 1) => mean(col(i)).toFixed(d) + " ± " + sd(col(i)).toFixed(d);
-    return [g[0][2], g[0][3], g.length, f(6, 0), f(7, 0), f(8, 1), f(9, 1), f(11, 1)];
+    t.append(row);
   });
+  return t;
+}
+
+function renderBatch(mode, rows, keys, base) {
+  $("bTable").replaceChildren(dictTable(rows));
+  const summ = JSON.parse(py.globals.get("_analyze")(mode, JSON.stringify(keys), JSON.stringify(base)));
   const cap = document.createElement("h3");
-  cap.textContent = "Średnie ± SD";
-  $("bSummary").replaceChildren(cap, table(["aversion", "bot_nb", "n", "Σ adrenaliny", "Σ kortyzolu", "Σ czujności", "epizody lęku", "odcinki ze strachem"], summ));
+  cap.textContent = mode === "oat" ? "Elastyczności (ΔY/Y) / (ΔX/X)" : mode === "lhs" ? "Korelacja rang Spearmana parametr–wynik" : "Średnie i SD w wariantach";
+  $("bSummary").replaceChildren(cap, dictTable(summ));
 }
 
 // ---------- testy ----------
@@ -814,7 +977,23 @@ $("dlSeries").onclick = () => download("timeseries.csv", py.runPython("_M.timese
 $("dlFear").onclick = () => download("fear_edges.csv", py.runPython("_M.fear_csv()"));
 $("bRun").onclick = runBatch;
 $("bStop").onclick = () => { batchStop = true; };
-$("bDl").onclick = () => download("batch_results.csv", batchCsv);
+$("bDl").onclick = () => download("results.csv", batchCsv);
+$("bDlSum").onclick = () => download("summary.csv", py.runPython("psm.dict_rows_csv(_BSUM)"));
+$("bMode").onchange = batchModeChanged;
+$("layer").onchange = () => draw();
+$("dlEdges").onclick = () => download("edges.csv", py.runPython("_M.edge_csv()"));
+$("btnIso").onclick = async () => {
+  $("btnIso").disabled = true;
+  $("layerInfo").textContent = "Liczenie izowist…";
+  await tick();
+  const r = JSON.parse(py.globals.get("_iso")());
+  isoVals = r.iso;
+  const c = r.cmp;
+  $("layerInfo").textContent = `Izowisty policzone. Spearman na ${c.n_edges} odcinkach (odwiedzonych ≥ 30 cykli): pole izowisty vs średnia adrenalina ρ = ${c.rho_area_adrenaline}, vs czujność ρ = ${c.rho_area_vigilance}; udział zasłoniętych promieni vs adrenalina ρ = ${c.rho_blocked_adrenaline}.`;
+  $("layer").value = "isovist";
+  $("btnIso").disabled = false;
+  draw();
+};
 $("tRun").onclick = runTests;
 window.addEventListener("resize", () => { if (net) { sizeCanvas(); draw(); } });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => draw());
