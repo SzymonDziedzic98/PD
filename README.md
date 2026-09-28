@@ -28,6 +28,8 @@ Symulacja zatrzymuje się po 10 000 cyklach; w cyklu 9999 wyniki są dopisywane 
 - `web/index.html` – uruchamia `psm.py` w przeglądarce (Pyodide): mapa parku z pamięcią strachu na ścieżkach,
   strefy Halla phantoma, wykres adrenaliny, kortyzolu i czujności, batch, testy i pobieranie CSV.
   Otwórz przez serwer HTTP, np. `cd web && python -m http.server`, potem `http://localhost:8000`.
+  Interfejs jest po polsku i po angielsku: przełącznik PL/EN w nagłówku, wybór zapamiętuje przeglądarka;
+  `?lang=en` albo `?lang=pl` w adresie wymusza język. Teksty angielskie są w `web/i18n.js`.
   Workflow `.github/workflows/pages.yml` publikuje `web/` na GitHub Pages
   (jednorazowo: Settings → Pages → Source: „GitHub Actions”).
 

@@ -64,6 +64,9 @@ header.top {
 header.top p { margin: 0; color: var(--muted); max-width: 72ch; }
 .status { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
 .status b { color: var(--ink); font-weight: 500; }
+.lang { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.lang button { border: 0; background: transparent; padding: 3px 9px; cursor: pointer; font-family: var(--font-label); font-weight: 500; font-size: 12px; color: var(--muted); }
+.lang button[aria-pressed="true"] { background: var(--ink); color: var(--ground); }
 
 nav.tabs { display: flex; gap: 4px; padding-block: 10px; flex-wrap: wrap; }
 nav.tabs button {
@@ -136,6 +139,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script src="i18n.js"></script>
 </head>
 <body>
 
@@ -143,7 +147,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
   <div class="box">
     <h2>Ładowanie Pythona (Pyodide)…</h2>
     <progress id="loadBar"></progress>
-    <p class="hint" id="loadMsg">Pierwsze uruchomienie pobiera ok. 10 MB, potem przeglądarka trzyma to w pamięci podręcznej.</p>
+    <p class="hint" id="loadMsg" data-noi18n>Pierwsze uruchomienie pobiera ok. 10 MB, potem przeglądarka trzyma to w pamięci podręcznej.</p>
     <div id="loadPick" hidden>
       <p class="hint">Nie udało się wczytać <code>psm.py</code> obok strony (strona otwarta jako plik?). Wskaż plik ręcznie albo uruchom <code>python -m http.server</code> w katalogu <code>web/</code>.</p>
       <input type="file" id="pySrcFile" accept=".py">
@@ -154,7 +158,10 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 <header class="top">
   <h1>PSM – stres proksemiczny i awersja do tras</h1>
   <p>Port modelu <code>Hall_AC_aversion.gaml</code> do Pythona, uruchamiany w przeglądarce. Parametry z oznaczeniem ↻ działają po ponownej inicjalizacji.</p>
-  <div class="status" id="status">cykl <b id="stCycle">–</b> · park <b id="stNet">–</b></div>
+  <div class="status" id="status"><span>cykl</span> <b id="stCycle">–</b> · <span>park</span> <b id="stNet">–</b></div>
+  <div class="lang" role="group" aria-label="Język / Language">
+    <button type="button" data-lang="pl" lang="pl">PL</button><button type="button" data-lang="en" lang="en">EN</button>
+  </div>
 </header>
 
 <nav class="tabs" role="tablist">
@@ -169,7 +176,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
   <aside class="params">
     <div class="controls">
       <button class="btn primary" id="btnInit">Inicjalizuj</button>
-      <button class="btn" id="btnRun" disabled>Start</button>
+      <button class="btn" id="btnRun" data-noi18n disabled>Start</button>
       <button class="btn" id="btnStep" disabled>Krok</button>
     </div>
     <div class="field"><label for="speed">Cykli na klatkę</label>
@@ -199,7 +206,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
           <input type="text" id="osmCustom" placeholder="np. Park Tołpy"></div>
         <div class="controls"><button class="btn" id="btnOsm">Pobierz z OSM</button>
           <button class="btn" id="btnOsmSave" disabled>Zapisz GeoJSON</button></div>
-        <p class="hint" id="osmInfo">Ścieżki (highway=footway, path, …) w granicach parku; przeszkody: zarośla, zadrzewienia i lasy, żywopłoty, mury, szpalery drzew i budynki. Rozłączne kawałki ścieżek (np. po drugiej stronie ulicy) są łączone odcinkami do 50 m. Pobrane parki są zapamiętywane w przeglądarce.</p>
+        <p class="hint" id="osmInfo" data-noi18n></p>
       </div>
       <div id="srcFiles" hidden>
         <div class="field stack"><label for="roadsFile">Ścieżki (np. Staszica_SHP_sciezki_01.shp)</label>
@@ -208,7 +215,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
           <input type="file" id="obsFile" accept=".shp,.geojson,.json"></div>
         <p class="hint">Z shapefile wystarczy plik <code>.shp</code>; współrzędne powinny być w metrach (np. EPSG:2180). GeoJSON w stopniach jest rzutowany automatycznie.</p>
       </div>
-      <p class="hint" id="srcInfo">Losowy park z alejkami i krzewami; zmień „Seed parku”, żeby dostać inny układ.</p>
+      <p class="hint" id="srcInfo" data-noi18n></p>
     </div>
 
     <div id="paramForm"></div>
@@ -301,7 +308,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
     </div>
     <p class="hint" id="bSpec"></p>
     <progress id="bProg" value="0" max="1"></progress>
-    <p class="hint mono" id="bProgTxt">—</p>
+    <p class="hint mono" id="bProgTxt" data-noi18n>—</p>
     <div class="table-wrap" id="bSummary"></div>
     <div class="table-wrap" id="bTable"></div>
     <div class="controls"><button class="btn" id="bDl" disabled>results.csv</button><button class="btn" id="bDlSum" disabled>summary.csv</button></div>
@@ -358,6 +365,7 @@ let batchStop = false, batchCsv = "";
 const $ = (id) => document.getElementById(id);
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const tick = () => new Promise((r) => setTimeout(r, 0));
+I18N.init(I18N_EN);
 
 function showMsg(text, kind = "") {
   const box = $("messages");
@@ -371,10 +379,11 @@ function showMsg(text, kind = "") {
 // ---------- ładowanie Pyodide + psm.py ----------
 async function boot() {
   try {
-    $("loadMsg").textContent = "Pobieranie interpretera Pythona…";
+    $("loadMsg").textContent = L("Pobieranie interpretera Pythona…", "Downloading the Python interpreter…");
     py = await loadPyodide();
   } catch (e) {
-    $("loadMsg").textContent = "Nie udało się pobrać Pyodide: " + e.message + ". Sprawdź połączenie z internetem.";
+    $("loadMsg").textContent = L("Nie udało się pobrać Pyodide: ", "Could not download Pyodide: ") + e.message +
+      L(". Sprawdź połączenie z internetem.", ". Check your internet connection.");
     return;
   }
   let src = null;
@@ -486,6 +495,8 @@ def _osm_geojson(path):
   RESTART = new Set(JSON.parse(py.runPython("json.dumps(sorted(psm.RESTART_KEYS))")));
   CHOICES = JSON.parse(py.runPython("json.dumps(psm.CHOICES)"));
   SENS = JSON.parse(py.runPython("json.dumps(list(psm.SENS_PARAMS))"));
+  GAP = py.runPython("psm.OSM_BRIDGE_GAP");
+  renderOsmInfo();
   const numKeys = Object.keys(DEFAULTS).filter((k) => ["int", "float", "NoneType"].includes(TYPES[k]));
   for (const id of ["bP1", "bP2"]) {
     const sel = $(id);
@@ -493,7 +504,7 @@ def _osm_geojson(path):
     for (const k of numKeys) sel.append(new Option(k, k));
   }
   $("bP1").value = "aversion_strength";
-  $("bSpec").textContent = "Stałe w analizie wrażliwości: " + SENS.join(", ") + ".";
+  renderSpec();
   buildForm();
   $("loading").hidden = true;
   await initModel();
@@ -508,16 +519,20 @@ function buildForm() {
     det.className = "cat";
     det.open = ci < 1 || cat === "Awersja do tras" || cat === "Nasadzenia";
     const sum = document.createElement("summary");
-    sum.textContent = cat;
+    sum.dataset.pl = cat;
+    sum.textContent = L(cat, I18N_CAT_EN[cat] || cat);
     det.append(sum);
     const fields = document.createElement("div");
     fields.className = "fields";
-    for (const [key, label] of items) {
+    for (const [key, labelPl] of items) {
+      const label = L(labelPl, I18N_PARAM_EN[key] || labelPl);
       const v = DEFAULTS[key];
       const row = document.createElement("div");
       row.className = "field" + (RESTART.has(key) ? " restart" : "");
       const lab = document.createElement("label");
       lab.textContent = label;
+      lab.dataset.pl = labelPl;
+      lab.dataset.key = key;
       lab.htmlFor = "p_" + key;
       let inp;
       if (CHOICES[key]) {
@@ -561,7 +576,8 @@ function onParamChange(ev) {
   if (!hasModel) return;
   const key = ev.target.dataset.key;
   if (RESTART.has(key)) {
-    showMsg("Zmiana „" + ev.target.previousSibling.textContent + "” zadziała po ponownej inicjalizacji.", "warn");
+    showMsg(L("Zmiana „", "The change to “") + ev.target.previousSibling.textContent +
+      L("” zadziała po ponownej inicjalizacji.", "” takes effect after re-initialisation."), "warn");
     return;
   }
   py.globals.get("_set_params")(JSON.stringify(readParams()));
@@ -574,9 +590,11 @@ function sourceChanged() {
   $("srcOsm").hidden = k !== "osm";
   $("srcFiles").hidden = k !== "files";
   $("srcInfo").textContent = k === "generated"
-    ? "Losowy park z alejkami i krzewami; zmień „Seed parku”, żeby dostać inny układ."
-    : k === "osm" ? (osmJson ? "Wczytany: " + osmName + ". Kliknij Inicjalizuj." : "Pobierz park, potem Inicjalizuj.")
-    : "Wskaż plik ścieżek (i opcjonalnie przeszkód), potem Inicjalizuj.";
+    ? L("Losowy park z alejkami i krzewami; zmień „Seed parku”, żeby dostać inny układ.",
+        "A random park with alleys and shrubs; change “Park seed” to get another layout.")
+    : k === "osm" ? (osmJson ? L("Wczytany: ", "Loaded: ") + osmName + L(". Kliknij Inicjalizuj.", ". Click Initialise.")
+                             : L("Pobierz park, potem Inicjalizuj.", "Fetch a park, then Initialise."))
+    : L("Wskaż plik ścieżek (i opcjonalnie przeszkód), potem Inicjalizuj.", "Choose a paths file (and optionally obstacles), then Initialise.");
 }
 
 function osmParkName() {
@@ -586,9 +604,10 @@ function osmParkName() {
 
 async function fetchOsm() {
   const name = osmParkName();
-  if (!name) { showMsg("Podaj nazwę parku.", "warn"); return; }
+  if (!name) { showMsg(L("Podaj nazwę parku.", "Enter a park name."), "warn"); return; }
   $("btnOsm").disabled = true;
-  $("osmInfo").textContent = "Pobieranie „" + name + "” z Overpass API…";
+  osmInfoSet = true;
+  $("osmInfo").textContent = L("Pobieranie „", "Fetching “") + name + L("” z Overpass API…", "” from the Overpass API…");
   try {
     const q = py.globals.get("psm").overpass_query(name);
     const cacheKey = "osm:" + q;
@@ -598,37 +617,37 @@ async function fetchOsm() {
                        "https://overpass.private.coffee/api/interpreter"];
     for (const url of data === null ? endpoints : []) {
       const host = new URL(url).host;
-      $("osmInfo").textContent = "Pobieranie „" + name + "” z " + host + "… (do 60 s)";
+      $("osmInfo").textContent = L("Pobieranie „", "Fetching “") + name + L("” z ", "” from ") + host + L("… (do 60 s)", "… (up to 60 s)");
       const ctl = new AbortController();
       const timer = setTimeout(() => ctl.abort(), 60000);
       try {
         const r = await fetch(url, { method: "POST", body: "data=" + encodeURIComponent(q), signal: ctl.signal,
           headers: { "Content-Type": "application/x-www-form-urlencoded" } });
-        if (!r.ok) throw new Error(host + ": HTTP " + r.status + (r.status === 429 ? " (serwer przeciążony)" : ""));
+        if (!r.ok) throw new Error(host + ": HTTP " + r.status + (r.status === 429 ? L(" (serwer przeciążony)", " (server overloaded)") : ""));
         data = await r.text();
-        if (!data.trim().startsWith("{")) throw new Error(host + ": odpowiedź nie jest JSON (limit czasu serwera)");
+        if (!data.trim().startsWith("{")) throw new Error(host + L(": odpowiedź nie jest JSON (limit czasu serwera)", ": the response is not JSON (server timeout)"));
         if (JSON.parse(data).remark && !JSON.parse(data).elements.length) throw new Error(host + ": " + JSON.parse(data).remark);
         try { localStorage.setItem(cacheKey, data); } catch (e) { /* za duże do zapamiętania */ }
         break;
       } catch (e) {
         data = null;
-        lastErr = e.name === "AbortError" ? new Error(host + ": brak odpowiedzi w 60 s") : e;
+        lastErr = e.name === "AbortError" ? new Error(host + L(": brak odpowiedzi w 60 s", ": no response within 60 s")) : e;
       } finally { clearTimeout(timer); }
     }
-    if (data === null) throw lastErr || new Error("brak odpowiedzi");
+    if (data === null) throw lastErr || new Error(L("brak odpowiedzi", "no response"));
     const n = JSON.parse(data).elements.length;
-    if (!n) throw new Error("OSM nie zwrócił żadnych obiektów dla tej nazwy");
+    if (!n) throw new Error(L("OSM nie zwrócił żadnych obiektów dla tej nazwy", "OSM returned no objects for this name"));
     py.FS.writeFile("/tmp/osm.json", data);
     const info = JSON.parse(py.globals.get("_load")("/tmp/osm.json", null));
     osmJson = data; osmName = name;
     $("btnOsmSave").disabled = false;
-    $("osmInfo").textContent = name + ": " + info.roads + " odcinków ścieżek, " + info.obstacles + " przeszkód" +
-      (info.bridges ? "; połączono " + info.parts_before + " rozłącznych części " + info.bridges + " łącznikami (do 50 m)" : "") +
-      (info.parts_after > 1 ? "; zostało " + info.parts_after + " części (dalej niż 50 m)" : "") + ".";
+    $("osmInfo").textContent = name + ": " + info.roads + L(" odcinków ścieżek, ", " path segments, ") + info.obstacles + L(" przeszkód", " obstacles") +
+      (info.bridges ? L("; połączono ", "; joined ") + info.parts_before + L(" rozłącznych części ", " separate parts with ") + info.bridges + L(` łącznikami (do ${GAP} m)`, ` links (up to ${GAP} m)`) : "") +
+      (info.parts_after > 1 ? L("; zostało ", "; ") + info.parts_after + L(` części (dalej niż ${GAP} m)`, ` parts remain (further apart than ${GAP} m)`) : "") + ".";
     sourceChanged();
     await initModel();
   } catch (e) {
-    $("osmInfo").textContent = "Nie udało się: " + (e.message || e) + ". Spróbuj innej nazwy albo za chwilę.";
+    $("osmInfo").textContent = L("Nie udało się: ", "Failed: ") + (e.message || e) + L(". Spróbuj innej nazwy albo za chwilę.", ". Try another name or try again shortly.");
   } finally {
     $("btnOsm").disabled = false;
   }
@@ -636,7 +655,7 @@ async function fetchOsm() {
 
 async function loadFiles() {
   const rf = $("roadsFile").files[0], of = $("obsFile").files[0];
-  if (!rf) throw new Error("Wskaż plik ścieżek.");
+  if (!rf) throw new Error(L("Wskaż plik ścieżek.", "Choose a paths file."));
   const rp = "/tmp/" + rf.name;
   py.FS.writeFile(rp, new Uint8Array(await rf.arrayBuffer()));
   let op = null;
@@ -647,29 +666,28 @@ async function loadFiles() {
 // ---------- symulacja ----------
 async function initModel() {
   running = false;
-  $("btnRun").textContent = "Start";
+  runLabel();
   showMsg("");
   try {
     const kind = $("srcKind").value;
     if (kind === "files") await loadFiles();
-    if (kind === "osm" && !osmJson) { showMsg("Najpierw pobierz park z OSM.", "warn"); return; }
+    if (kind === "osm" && !osmJson) { showMsg(L("Najpierw pobierz park z OSM.", "Fetch a park from OSM first."), "warn"); return; }
     if (kind === "osm") { py.FS.writeFile("/tmp/osm.json", osmJson); py.globals.get("_load")("/tmp/osm.json", null); }
     net = JSON.parse(py.globals.get("_init")(JSON.stringify(readParams()), $("seed").value.trim(), kind !== "generated"));
   } catch (e) {
-    showMsg("Inicjalizacja nie powiodła się: " + (e.message || e).toString().split("\n").slice(-2).join(" "), "error");
+    showMsg(L("Inicjalizacja nie powiodła się: ", "Initialisation failed: ") + (e.message || e).toString().split("\n").slice(-2).join(" "), "error");
     return;
   }
   hasModel = true;
   histLen = 0;
   resetChart();
-  $("stNet").textContent = (net.source === "generated" ? "generowany" : "z pliku") + ", " + net.n_edges + " odcinków, " + Math.round(net.length) + " m";
-  if (net.n_components > 1) showMsg("Sieć ma " + net.n_components + " rozłączne części; agenci chodzą po największej.", "warn");
+  renderNet();
+  if (net.n_components > 1) showMsg(L("Sieć ma ", "The network has ") + net.n_components +
+    L(" rozłączne części; agenci chodzą po największej.", " separate parts; agents walk on the largest one."), "warn");
   ["btnRun", "btnStep", "dlSummary", "dlSeries", "dlFear", "dlEdges", "btnIso"].forEach((id) => $(id).disabled = false);
   isoVals = null;
-  const pi = net.planting;
-  $("layerInfo").textContent = pi && pi.n_bushes !== undefined
-    ? `Nasadzenia sterowane: ${pi.n_bushes} krzewów, ${pi.area} m² (cel ${pi.area_target} m²), w narożnikach ${Math.round(pi.junction_share * 100)}% (${pi.n_junctions} skrzyżowań).`
-    : "";
+  isoCmp = null;
+  renderLayerInfo();
   sizeCanvas();
   refresh(JSON.parse(py.globals.get("_advance")(0)));
 }
@@ -685,11 +703,24 @@ function refresh(res) {
   }
   if (res.hist.length) chart.update("none");
   $("stCycle").textContent = snap.cycle;
+  renderStats();
+  draw();
+  if (snap.finished) {
+    running = false;
+    runLabel();
+    showMsg(L("Koniec przebiegu (cykl ", "End of run (cycle ") + snap.cycle + L("). summary.csv jest gotowy do pobrania.", "). summary.csv is ready to download."));
+  }
+}
+
+function renderStats() {
+  if (!snap) return;
   const m = snap.metrics;
   const stats = [
-    ["adrenalina", m.adrenaline.toFixed(2)], ["kortyzol", m.cortisol.toFixed(2)], ["czujność", m.vigilance.toFixed(2)],
-    ["Σ adrenaliny", m.total_adrenaline.toFixed(0)], ["Σ kortyzolu", m.total_cortisol.toFixed(0)],
-    ["epizody lęku", m.fear_events], ["odcinki ze strachem", m.feared_edges], ["max fear_memory", m.max_fear_memory.toFixed(2)],
+    [L("adrenalina", "adrenaline"), m.adrenaline.toFixed(2)], [L("kortyzol", "cortisol"), m.cortisol.toFixed(2)],
+    [L("czujność", "vigilance"), m.vigilance.toFixed(2)],
+    [L("Σ adrenaliny", "Σ adrenaline"), m.total_adrenaline.toFixed(0)], [L("Σ kortyzolu", "Σ cortisol"), m.total_cortisol.toFixed(0)],
+    [L("epizody lęku", "fear episodes"), m.fear_events], [L("odcinki ze strachem", "segments with fear"), m.feared_edges],
+    ["max fear_memory", m.max_fear_memory.toFixed(2)],
   ];
   $("stats").replaceChildren(...stats.map(([k, v]) => {
     const d = document.createElement("div"); d.className = "stat";
@@ -697,12 +728,6 @@ function refresh(res) {
     const dd = document.createElement("dd"); dd.textContent = v;
     d.append(dt, dd); return d;
   }));
-  draw();
-  if (snap.finished) {
-    running = false;
-    $("btnRun").textContent = "Start";
-    showMsg("Koniec przebiegu (cykl " + snap.cycle + "). summary.csv jest gotowy do pobrania.");
-  }
 }
 
 async function loop() {
@@ -806,15 +831,15 @@ function resetChart() {
   chart = new Chart($("chart"), {
     type: "line",
     data: { labels: [], datasets: [
-      { label: "adrenalina", data: [], borderColor: "#2f6fb2", borderWidth: 1.2, pointRadius: 0 },
-      { label: "kortyzol", data: [], borderColor: "#8a4fbf", borderWidth: 1.2, pointRadius: 0 },
-      { label: "czujność", data: [], borderColor: ink, borderWidth: 1, pointRadius: 0 },
+      { label: L("adrenalina", "adrenaline"), data: [], borderColor: "#2f6fb2", borderWidth: 1.2, pointRadius: 0 },
+      { label: L("kortyzol", "cortisol"), data: [], borderColor: "#8a4fbf", borderWidth: 1.2, pointRadius: 0 },
+      { label: L("czujność", "vigilance"), data: [], borderColor: ink, borderWidth: 1, pointRadius: 0 },
     ] },
     options: {
       animation: false, maintainAspectRatio: false, parsing: true, normalized: true,
       plugins: { legend: { display: false }, decimation: { enabled: true, algorithm: "min-max" } },
       scales: {
-        x: { ticks: { color: muted, maxTicksLimit: 8 }, grid: { color: line }, title: { display: true, text: "cykl", color: muted } },
+        x: { ticks: { color: muted, maxTicksLimit: 8 }, grid: { color: line }, title: { display: true, text: L("cykl", "cycle"), color: muted } },
         y: { ticks: { color: muted }, grid: { color: line }, suggestedMin: 0, suggestedMax: 15 },
       },
     },
@@ -856,7 +881,7 @@ async function runBatch() {
   try {
     if (kind === "files") await loadFiles();
     if (kind === "osm") {
-      if (!osmJson) throw new Error("najpierw pobierz park z OSM");
+      if (!osmJson) throw new Error(L("najpierw pobierz park z OSM", "fetch a park from OSM first"));
       py.FS.writeFile("/tmp/osm.json", osmJson); py.globals.get("_load")("/tmp/osm.json", null);
     }
     if (mode === "planting") {
@@ -865,13 +890,13 @@ async function runBatch() {
     } else if (mode === "sweep") {
       spec.sweep = {};
       const v1 = castList($("bP1").value, $("bV1").value), v2 = castList($("bP2").value, $("bV2").value);
-      if (!v1) throw new Error("podaj wartości parametru 1");
+      if (!v1) throw new Error(L("podaj wartości parametru 1", "enter values for parameter 1"));
       spec.sweep[$("bP1").value] = v1;
       if (v2) spec.sweep[$("bP2").value] = v2;
       keys = Object.keys(spec.sweep);
     } else if (mode === "oat") spec.delta = parseFloat($("bDelta").value);
     else spec.samples = parseInt($("bSamples").value, 10);
-  } catch (e) { $("bProgTxt").textContent = "Błąd: " + e.message; return; }
+  } catch (e) { $("bProgTxt").textContent = L("Błąd: ", "Error: ") + e.message; return; }
   const plan = JSON.parse(py.globals.get("_plan")(mode, JSON.stringify(spec), JSON.stringify(base)));
   batchStop = false;
   $("bRun").disabled = true; $("bStop").disabled = false; $("bDl").disabled = true; $("bDlSum").disabled = true;
@@ -891,7 +916,7 @@ async function runBatch() {
     let done = false;
     while (!done && !batchStop) {
       done = py.runPython("_M.run(500); _M.cycle >= _M.p['end_cycle']");
-      $("bProgTxt").textContent = `przebieg ${i + 1}/${plan.length} · ${desc || label} · seed ${seed} · cykl ${py.runPython("_M.cycle")}`;
+      $("bProgTxt").textContent = `${L("przebieg", "run")} ${i + 1}/${plan.length} · ${desc || label} · seed ${seed} · ${L("cykl", "cycle")} ${py.runPython("_M.cycle")}`;
       await tick();
     }
     if (batchStop) break;
@@ -901,7 +926,8 @@ async function runBatch() {
   }
   } catch (e) { failed = (e.message || String(e)).split("\n").slice(-2).join(" "); }
   const secs = ((performance.now() - t0) / 1000).toFixed(0);
-  $("bProgTxt").textContent = (failed ? "Błąd: " + failed : batchStop ? "Zatrzymano" : "Gotowe") + ` · ${rows.length}/${plan.length} przebiegów · ${secs} s`;
+  $("bProgTxt").textContent = (failed ? L("Błąd: ", "Error: ") + failed : batchStop ? L("Zatrzymano", "Stopped") : L("Gotowe", "Done")) +
+    ` · ${rows.length}/${plan.length} ${L("przebiegów", "runs")} · ${secs} s`;
   batchCsv = py.runPython("psm.dict_rows_csv(_BROWS)");
   $("bRun").disabled = false; $("bStop").disabled = true; $("bDl").disabled = rows.length === 0; $("bDlSum").disabled = rows.length === 0;
   hasModel = false;
@@ -933,21 +959,23 @@ function renderBatch(mode, rows, keys, base) {
   $("bTable").replaceChildren(dictTable(rows));
   const summ = JSON.parse(py.globals.get("_analyze")(mode, JSON.stringify(keys), JSON.stringify(base)));
   const cap = document.createElement("h3");
-  cap.textContent = mode === "oat" ? "Elastyczności (ΔY/Y) / (ΔX/X)" : mode === "lhs" ? "Korelacja rang Spearmana parametr–wynik" : "Średnie i SD w wariantach";
+  cap.textContent = mode === "oat" ? L("Elastyczności (ΔY/Y) / (ΔX/X)", "Elasticities (ΔY/Y) / (ΔX/X)")
+    : mode === "lhs" ? L("Korelacja rang Spearmana parametr–wynik", "Spearman rank correlation parameter–output")
+    : L("Średnie i SD w wariantach", "Means and SD per variant");
   $("bSummary").replaceChildren(cap, dictTable(summ));
 }
 
 // ---------- testy ----------
 async function runTests() {
   $("tRun").disabled = true;
-  $("tSummary").textContent = "Trwa…";
+  $("tSummary").textContent = L("Trwa…", "Running…");
   await tick();
   const res = JSON.parse(py.runPython("psm.run_tests_json()"));
   const t = document.createElement("table");
-  t.innerHTML = "<tr><th>test</th><th>wynik</th><th class='num'>czas (s)</th><th>komunikat</th></tr>";
+  t.innerHTML = `<tr><th>test</th><th>${L("wynik", "result")}</th><th class='num'>${L("czas (s)", "time (s)")}</th><th>${L("komunikat", "message")}</th></tr>`;
   for (const [name, ok, msg, secs] of res) {
     const tr = document.createElement("tr");
-    const cells = [name, ok ? "OK" : "BŁĄD", secs, msg];
+    const cells = [name, ok ? "OK" : L("BŁĄD", "FAIL"), secs, msg];
     cells.forEach((v, i) => {
       const td = document.createElement("td");
       td.textContent = v;
@@ -959,7 +987,7 @@ async function runTests() {
   }
   $("tTable").replaceChildren(t);
   const bad = res.filter((r) => !r[1]).length;
-  $("tSummary").textContent = `${res.length - bad}/${res.length} testów przeszło`;
+  $("tSummary").textContent = `${res.length - bad}/${res.length} ${L("testów przeszło", "tests passed")}`;
   $("tRun").disabled = false;
 }
 
@@ -973,7 +1001,7 @@ $("btnInit").onclick = () => initModel();
 $("btnRun").onclick = () => {
   if (!hasModel) return;
   running = !running;
-  $("btnRun").textContent = running ? "Pauza" : "Start";
+  runLabel();
   if (running) loop();
 };
 $("btnStep").onclick = () => { if (hasModel) refresh(JSON.parse(py.globals.get("_advance")(1))); };
@@ -999,12 +1027,12 @@ $("layer").onchange = () => draw();
 $("dlEdges").onclick = () => download("edges.csv", py.runPython("_M.edge_csv()"));
 $("btnIso").onclick = async () => {
   $("btnIso").disabled = true;
-  $("layerInfo").textContent = "Liczenie izowist…";
+  $("layerInfo").textContent = L("Liczenie izowist…", "Computing isovists…");
   await tick();
   const r = JSON.parse(py.globals.get("_iso")());
   isoVals = r.iso;
-  const c = r.cmp;
-  $("layerInfo").textContent = `Izowisty policzone. Spearman na ${c.n_edges} odcinkach (odwiedzonych ≥ 30 cykli): pole izowisty vs średnia adrenalina ρ = ${c.rho_area_adrenaline}, vs czujność ρ = ${c.rho_area_vigilance}; udział zasłoniętych promieni vs adrenalina ρ = ${c.rho_blocked_adrenaline}.`;
+  isoCmp = r.cmp;
+  renderLayerInfo();
   $("layer").value = "isovist";
   $("btnIso").disabled = false;
   draw();
@@ -1012,6 +1040,59 @@ $("btnIso").onclick = async () => {
 $("tRun").onclick = runTests;
 window.addEventListener("resize", () => { if (net) { sizeCanvas(); draw(); } });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => draw());
+
+// ---------- język ----------
+let osmInfoSet = false, isoCmp = null, GAP = 25;
+
+function runLabel() { $("btnRun").textContent = running ? L("Pauza", "Pause") : L("Start", "Run"); }
+
+function renderSpec() {
+  if (SENS.length) $("bSpec").textContent = L("Stałe w analizie wrażliwości: ", "Constants in the sensitivity analysis: ") + SENS.join(", ") + ".";
+}
+
+function renderNet() {
+  if (!net) return;
+  $("stNet").textContent = (net.source === "generated" ? L("generowany", "generated") : L("z pliku", "from file")) + ", " +
+    net.n_edges + L(" odcinków, ", " segments, ") + Math.round(net.length) + " m";
+}
+
+function renderLayerInfo() {
+  const c = isoCmp;
+  if (c) {
+    $("layerInfo").textContent = L(
+      `Izowisty policzone. Spearman na ${c.n_edges} odcinkach (odwiedzonych ≥ 30 cykli): pole izowisty vs średnia adrenalina ρ = ${c.rho_area_adrenaline}, vs czujność ρ = ${c.rho_area_vigilance}; udział zasłoniętych promieni vs adrenalina ρ = ${c.rho_blocked_adrenaline}.`,
+      `Isovists computed. Spearman over ${c.n_edges} segments (visited ≥ 30 cycles): isovist area vs mean adrenaline ρ = ${c.rho_area_adrenaline}, vs vigilance ρ = ${c.rho_area_vigilance}; share of blocked rays vs adrenaline ρ = ${c.rho_blocked_adrenaline}.`);
+    return;
+  }
+  const pi = net && net.planting;
+  $("layerInfo").textContent = pi && pi.n_bushes !== undefined
+    ? L(`Nasadzenia sterowane: ${pi.n_bushes} krzewów, ${pi.area} m² (cel ${pi.area_target} m²), w narożnikach ${Math.round(pi.junction_share * 100)}% (${pi.n_junctions} skrzyżowań).`,
+        `Controlled planting: ${pi.n_bushes} shrubs, ${pi.area} m² (target ${pi.area_target} m²), ${Math.round(pi.junction_share * 100)}% at junction corners (${pi.n_junctions} junctions).`)
+    : "";
+}
+
+function renderOsmInfo() {
+  if (osmInfoSet) return;
+  $("osmInfo").textContent = L(
+    `Ścieżki (highway=footway, path, …) w granicach parku; przeszkody: zarośla, zadrzewienia i lasy, żywopłoty, mury, szpalery drzew i budynki. Rozłączne kawałki ścieżek (np. po drugiej stronie ulicy) są łączone odcinkami do ${GAP} m. Pobrane parki są zapamiętywane w przeglądarce.`,
+    `Paths (highway=footway, path, …) inside the park boundary; obstacles: scrub, woods and forests, hedges, walls, tree rows and buildings. Separate pieces of the path network (e.g. across a street) are joined by links of up to ${GAP} m. Fetched parks are cached in the browser.`);
+}
+
+I18N.onChange(() => {
+  document.querySelectorAll("#paramForm summary").forEach((el) => { el.textContent = L(el.dataset.pl, I18N_CAT_EN[el.dataset.pl] || el.dataset.pl); });
+  document.querySelectorAll("#paramForm label[data-key]").forEach((el) => { el.textContent = L(el.dataset.pl, I18N_PARAM_EN[el.dataset.key] || el.dataset.pl); });
+  runLabel(); renderSpec(); renderNet(); renderStats(); renderLayerInfo(); renderOsmInfo(); sourceChanged();
+  if (chart) {
+    chart.data.datasets[0].label = L("adrenalina", "adrenaline");
+    chart.data.datasets[1].label = L("kortyzol", "cortisol");
+    chart.data.datasets[2].label = L("czujność", "vigilance");
+    chart.options.scales.x.title.text = L("cykl", "cycle");
+    chart.update("none");
+  }
+});
+renderOsmInfo();
+sourceChanged();
+runLabel();
 
 boot();
 </script>
