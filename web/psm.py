@@ -67,6 +67,7 @@ DEFAULTS = {
     "adrenaline_cooldown": 0.99,
     "cortisol_cooldown": 0.999,
     "initial_level": 0.5,          # startowe vigilance / adrenaline / cortisol
+    "cortisol_gain": 0.2,          # cortisol + 0.2 * adrenaline / (cortisol + 1)^2
     # tylko port Pythona
     "largest_component": True,
     "park": "generated",           # "generated" albo "file" (sieć podana z zewnątrz)
@@ -84,7 +85,10 @@ DEFAULTS = {
     "planting": "default",
     "planting_seed": 1,
     "bush_area_total": 2500.0,     # m², łączna powierzchnia krzewów (stała między wariantami)
-    "bush_radius": 4.0,            # m
+    "bush_form": "clumps",         # "clumps" = zwarte kępy (koła), "band" = pasy wzdłuż ścieżki
+    "bush_radius": 4.0,            # m (kępy)
+    "bush_band_width": 2.0,        # m (pasy)
+    "bush_band_length": 12.0,      # m (pasy, długość jednego odcinka)
     "bush_junction_share": 0.5,    # udział powierzchni w narożnikach skrzyżowań
     "bush_junction_distance": 2.0, # m, odstęp krawędzi krzewu od węzła skrzyżowania
     "bush_path_offset": 1.0,       # m, odstęp krawędzi krzewu od osi ścieżki
@@ -99,6 +103,7 @@ CHOICES = {
     "bot_graph": ["weighted", "plain"],
     "fear_scope": ["shared", "individual"],
     "planting": ["default", "controlled", "none"],
+    "bush_form": ["clumps", "band"],
 }
 
 HALL_BASE = {"intimate": 0.45, "personal": 1.2, "social": 3.6, "public": 10.0}
@@ -122,6 +127,7 @@ GUI_PARAMETERS = [
         ("adrenaline_threshold", "Próg lęku (adrenalina)"),
         ("adrenaline_cooldown", "Wygaszanie adrenaliny"),
         ("cortisol_cooldown", "Wygaszanie kortyzolu"),
+        ("cortisol_gain", "Wzmocnienie kortyzolu"),
         ("initial_level", "Poziom startowy"),
         ("fear_spacing", "Min. odstęp znaczników strachu (m)"),
     ]),
@@ -139,7 +145,10 @@ GUI_PARAMETERS = [
         ("planting", "Nasadzenia"),
         ("planting_seed", "Seed nasadzeń"),
         ("bush_area_total", "Łączna powierzchnia krzewów (m²)"),
-        ("bush_radius", "Promień krzewu (m)"),
+        ("bush_form", "Forma (kępy / pas)"),
+        ("bush_radius", "Promień kępy (m)"),
+        ("bush_band_width", "Szerokość pasa (m)"),
+        ("bush_band_length", "Długość odcinka pasa (m)"),
         ("bush_junction_share", "Udział w narożnikach skrzyżowań"),
         ("bush_junction_distance", "Odstęp od węzła skrzyżowania (m)"),
         ("bush_path_offset", "Odstęp od osi ścieżki (m)"),
@@ -161,7 +170,8 @@ GUI_PARAMETERS = [
 RESTART_KEYS = {"bot_nb", "phantom_nb", "bot_speed_kmh", "bot_speed_sd", "phantom_speed_kmh",
                 "park_seed", "park_width", "park_height", "park_bushes", "step_min", "largest_component",
                 "bot_graph", "fear_scope", "planting", "planting_seed", "bush_area_total", "bush_radius",
-                "bush_junction_share", "bush_junction_distance", "bush_path_offset", "junction_zone"}
+                "bush_junction_share", "bush_junction_distance", "bush_path_offset", "junction_zone",
+                "bush_form", "bush_band_width", "bush_band_length"}
 
 
 def resolved_params(params=None):
@@ -619,81 +629,133 @@ def junctions(roads, probe=5.0):
 def plant_bushes(roads, p):
     """Sterowane nasadzenia przy stałej łącznej powierzchni.
 
-    Krzewy są kołami (16-kąt) o promieniu bush_radius. Część bush_junction_share powierzchni trafia
-    w narożniki skrzyżowań (na dwusiecznej kąta między ramionami, krawędź krzewu bush_junction_distance
-    od węzła i co najmniej bush_path_offset od osi ścieżek), reszta wzdłuż ścieżek (krawędź dokładnie
-    bush_path_offset od osi, cały krzew dalej niż junction_zone od skrzyżowań).
-    Gdy narożników brakuje, reszta powierzchni idzie wzdłuż ścieżek (zob. info["junction_share"]).
+    Forma "clumps": krzewy-koła (16-kąt) o promieniu bush_radius. W narożnikach skrzyżowań stoją na dwusiecznej
+    kąta między ramionami, z krawędzią bush_junction_distance od węzła i co najmniej bush_path_offset od osi ścieżek.
+    Forma "band": pasy (prostokąty bush_band_width × bush_band_length) równoległe do ścieżki, z krawędzią
+    bush_path_offset od osi; w narożnikach zaczynają się bush_junction_distance od węzła wzdłuż ramienia.
+    Część bush_junction_share powierzchni trafia do narożników, reszta wzdłuż ścieżek, cała dalej niż
+    junction_zone od skrzyżowań. Gdy narożników brakuje, reszta idzie wzdłuż ścieżek (zob. info["junction_share"]).
     """
     rng = random.Random(int(p["planting_seed"]))
+    form = p["bush_form"]
     r = float(p["bush_radius"])
+    w = float(p["bush_band_width"])
+    L = float(p["bush_band_length"])
     off = float(p["bush_path_offset"])
     jd = float(p["bush_junction_distance"])
     zone = float(p["junction_zone"])
-    one = ring_area(circle_ring((0.0, 0.0), r))
+    one = ring_area(circle_ring((0.0, 0.0), r)) if form == "clumps" else w * L
     n_total = int(round(float(p["bush_area_total"]) / one))
     n_junc = int(round(n_total * float(p["bush_junction_share"])))
     idx = SegIndex(roads)
     juncs = junctions(roads)
-    placed = []
-    grid = {}
-    gc = max(2 * r + 1.0, 5.0)
+    placed = []          # wielokąty
+    disks = {}           # siatka próbek (punkt, promień) do sprawdzania nakładania
+    gc = 6.0
+    band_rad = math.sqrt((w / 2) ** 2 + 0.25)
 
-    def free(c):
-        if idx.nearest(c, r + off + 1.0) < r + off - 1e-6:
-            return False
-        gi, gj = int(math.floor(c[0] / gc)), int(math.floor(c[1] / gc))
-        for i in range(gi - 1, gi + 2):
-            for j in range(gj - 1, gj + 2):
-                for q in grid.get((i, j), ()):
-                    if dist(c, q) < 2 * r + 0.3:
-                        return False
+    def shape_clump(c):
+        return circle_ring(c, r), [(c, r)], [c], r
+
+    def shape_band(start, ang, side):
+        dx, dy = math.cos(ang), math.sin(ang)
+        nx, ny = -dy * side, dx * side
+        c0 = (start[0] + nx * (off + w / 2), start[1] + ny * (off + w / 2))
+        n = max(1, int(math.ceil(L)))
+        cl = [(c0[0] + dx * L * k / n, c0[1] + dy * L * k / n) for k in range(n + 1)]
+        h = w / 2
+        e = (c0[0] + dx * L, c0[1] + dy * L)
+        ring = [(c0[0] - nx * h, c0[1] - ny * h), (e[0] - nx * h, e[1] - ny * h),
+                (e[0] + nx * h, e[1] + ny * h), (c0[0] + nx * h, c0[1] + ny * h)]
+        ring.append(ring[0])
+        # próbki obwodu do kontroli odstępu od ścieżek
+        edge_pts = []
+        for i in range(4):
+            q0, q1 = ring[i], ring[i + 1]
+            m = max(1, int(dist(q0, q1) / 0.5))
+            edge_pts += [(q0[0] + (q1[0] - q0[0]) * t / m, q0[1] + (q1[1] - q0[1]) * t / m) for t in range(m)]
+        return ring, [(q, band_rad) for q in cl], edge_pts, 0.0
+
+    def free(shape):
+        ring, samples, clear_pts, rad = shape
+        # odstęp od osi ścieżek: dla koła środek >= r + off, dla pasa każdy punkt obwodu >= off
+        for q in clear_pts:
+            if idx.nearest(q, rad + off + 1.0) < rad + off - 1e-6:
+                return False
+        for q, rq in samples:
+            gi, gj = int(math.floor(q[0] / gc)), int(math.floor(q[1] / gc))
+            k = int(math.ceil((rq + max(r, band_rad) + 0.3) / gc))
+            for i in range(gi - k, gi + k + 1):
+                for j in range(gj - k, gj + k + 1):
+                    for q2, r2 in disks.get((i, j), ()):
+                        if dist(q, q2) < rq + r2 + 0.3:
+                            return False
         return True
 
-    def put(c):
-        placed.append(c)
-        grid.setdefault((int(math.floor(c[0] / gc)), int(math.floor(c[1] / gc))), []).append(c)
+    def put(shape):
+        placed.append(shape[0])
+        for q, rq in shape[1]:
+            disks.setdefault((int(math.floor(q[0] / gc)), int(math.floor(q[1] / gc))), []).append((q, rq))
 
     cands = []
     for node, angs in juncs:
-        for k in range(len(angs)):
-            a0 = angs[k]
-            a1 = angs[(k + 1) % len(angs)] + (2 * math.pi if k == len(angs) - 1 else 0.0)
-            gap = a1 - a0
-            if gap < math.radians(30):
-                continue
-            half = min(gap / 2, math.pi / 2)
-            d = max(jd + r, (r + off) / math.sin(half))
-            mid = a0 + gap / 2
-            cands.append((node[0] + d * math.cos(mid), node[1] + d * math.sin(mid)))
+        if form == "clumps":
+            for k in range(len(angs)):
+                a0 = angs[k]
+                a1 = angs[(k + 1) % len(angs)] + (2 * math.pi if k == len(angs) - 1 else 0.0)
+                gap = a1 - a0
+                if gap < math.radians(30):
+                    continue
+                half = min(gap / 2, math.pi / 2)
+                d = max(jd + r, (r + off) / math.sin(half))
+                mid = a0 + gap / 2
+                cands.append(("c", (node[0] + d * math.cos(mid), node[1] + d * math.sin(mid)), node, 0))
+        else:
+            # pas zaczyna się jd od węzła (nie bliżej niż off + w, bo wszedłby na sąsiednie ramię),
+            # do dwóch odcinków pasa w ciągu wzdłuż każdego ramienia i strony
+            d0 = max(jd, off + w)
+            for ang in angs:
+                for side in (1.0, -1.0):
+                    for piece in range(2):
+                        d = d0 + piece * (L + 0.5)
+                        cands.append(("b", ((node[0] + d * math.cos(ang), node[1] + d * math.sin(ang)), ang, side),
+                                      node, piece))
     rng.shuffle(cands)
+    # najpierw odcinki najbliżej węzła, potem drugie w ciągu (kolejność losowa w obrębie grupy)
+    cands.sort(key=lambda c: c[3])
     n_j = 0
-    for c in cands:
+    setbacks = []
+    for kind, arg, node, _piece in cands:
         if n_j >= n_junc:
             break
-        if free(c):
-            put(c)
+        sh = shape_clump(arg) if kind == "c" else shape_band(*arg)
+        if free(sh):
+            put(sh)
             n_j += 1
+            if _piece == 0:
+                setbacks.append(min(dist(q, node) for q in sh[0][:-1]) if kind == "b"
+                                else dist(arg, node) - r)
     # wzdłuż ścieżek, z dala od skrzyżowań
     segs = [(rd[k], rd[k + 1]) for rd in roads for k in range(len(rd) - 1) if dist(rd[k], rd[k + 1]) > 0]
     cum = []
     tot = 0.0
-    for a, b in segs:
-        tot += dist(a, b)
+    for a_, b_ in segs:
+        tot += dist(a_, b_)
         cum.append(tot)
     jnodes = [n for n, _a in juncs]
     jgrid = {}
     for q in jnodes:
         jgrid.setdefault((int(math.floor(q[0] / 50.0)), int(math.floor(q[1] / 50.0))), []).append(q)
 
-    def far_from_junctions(c):
-        gi, gj = int(math.floor(c[0] / 50.0)), int(math.floor(c[1] / 50.0))
-        k = int(math.ceil((zone + r) / 50.0))
-        for i in range(gi - k, gi + k + 1):
-            for j in range(gj - k, gj + k + 1):
-                for q in jgrid.get((i, j), ()):
-                    if dist(c, q) < zone + r:
-                        return False
+    def far_from_junctions(pts):
+        for c in pts:
+            gi, gj = int(math.floor(c[0] / 50.0)), int(math.floor(c[1] / 50.0))
+            k = int(math.ceil(zone / 50.0))
+            for i in range(gi - k, gi + k + 1):
+                for j in range(gj - k, gj + k + 1):
+                    for q in jgrid.get((i, j), ()):
+                        if dist(c, q) < zone:
+                            return False
         return True
 
     tries = 0
@@ -707,19 +769,28 @@ def plant_bushes(roads, p):
                 lo = mid + 1
             else:
                 hi = mid
-        a, b = segs[lo]
-        L = dist(a, b)
+        a_, b_ = segs[lo]
+        Ls = dist(a_, b_)
         t = rng.random()
-        px, py = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+        px, py = a_[0] + (b_[0] - a_[0]) * t, a_[1] + (b_[1] - a_[1]) * t
         side = 1.0 if rng.random() < 0.5 else -1.0
-        nx, ny = -(b[1] - a[1]) / L * side, (b[0] - a[0]) / L * side
-        c = (px + nx * (r + off), py + ny * (r + off))
-        if far_from_junctions(c) and free(c):
-            put(c)
-    obstacles = [[circle_ring(c, r)] for c in placed]
-    info = {"n_bushes": len(placed), "n_target": n_total, "area": round(one * len(placed), 1),
+        if form == "clumps":
+            nx, ny = -(b_[1] - a_[1]) / Ls * side, (b_[0] - a_[0]) / Ls * side
+            c = (px + nx * (r + off), py + ny * (r + off))
+            sh = shape_clump(c)
+        else:
+            ang = math.atan2(b_[1] - a_[1], b_[0] - a_[0])
+            start = (px - math.cos(ang) * L / 2, py - math.sin(ang) * L / 2)
+            sh = shape_band(start, ang, side)
+        if far_from_junctions(sh[0][:-1]) and free(sh):
+            put(sh)
+    obstacles = [[ring] for ring in placed]
+    area = sum(ring_area(ring) for ring in placed)
+    info = {"form": form, "n_bushes": len(placed), "n_target": n_total, "area": round(area, 1),
             "area_target": float(p["bush_area_total"]), "n_junction": n_j,
             "junction_share": round(n_j / len(placed), 3) if placed else 0.0,
+            # faktyczny odstęp krawędzi krzewów narożnych od węzła (m)
+            "setback_mean": round(sum(setbacks) / len(setbacks), 2) if setbacks else None,
             "n_junctions": len(juncs), "junction_candidates": len(cands)}
     return obstacles, info
 
@@ -1147,7 +1218,7 @@ class Phantom(Mover):
         model._ignore = model.obstacles.containing(self.loc)
         self.where_are_they = [self.distance_number(model, b.loc) for b in model.bots]
         self.cortisol = self.cortisol * p["cortisol_cooldown"]
-        self.cortisol = self.cortisol + 0.2 * self.adrenaline / ((self.cortisol + 1.0) * (self.cortisol + 1.0))
+        self.cortisol = self.cortisol + p["cortisol_gain"] * self.adrenaline / ((self.cortisol + 1.0) * (self.cortisol + 1.0))
         self.vigilance = self.required_vigilance()
         self.adrenaline = self.adrenaline * p["adrenaline_cooldown"]
         self.adrenaline = self.adrenaline + self.vigilance
@@ -1466,6 +1537,7 @@ SENS_PARAMS = {
     "adrenaline_threshold": (8.0, 15.0),
     "adrenaline_cooldown": (0.98, 0.995),
     "cortisol_cooldown": (0.998, 0.9995),
+    "cortisol_gain": (0.1, 0.3),
     "hall_multiplier": (3.0, 5.0),
     "aversion_strength": (0.0, 10.0),
     "fear_deposit": (0.5, 2.0),
@@ -1551,7 +1623,7 @@ def make_model(overrides, seed, cycles, params=None, inputs=None):
     return Model(pp, seed=seed)
 
 
-def result_row(i, model, overrides, label=""):
+def result_row(i, model, overrides, label="", isovist=False):
     m = model.metrics()
     row = {"run": i, "seed": model.seed, "label": label, "cycles": model.cycle}
     for k in sorted(overrides):
@@ -1561,16 +1633,39 @@ def result_row(i, model, overrides, label=""):
         row[k] = round(v, 4) if isinstance(v, float) else v
     if model.planting_info:
         row["junction_share_real"] = model.planting_info["junction_share"]
+        row["setback_real"] = model.planting_info.get("setback_mean")
+    if isovist:
+        cmp_ = model.isovist_comparison()
+        L = [e.length for e in model.net.edges]
+        row["isovist_area_mean"] = round(sum(a[0] * l for a, l in zip(model.isovist_edges, L)) / sum(L), 2)
+        row["isovist_blocked_mean"] = round(sum(a[2] * l for a, l in zip(model.isovist_edges, L)) / sum(L), 4)
+        for k, v in cmp_.items():
+            row[k] = round(v, 4) if isinstance(v, float) and v == v else (v if not isinstance(v, float) else "")
     return row
 
 
-def run_plan(plan, cycles=3000, params=None, inputs=None, progress=None):
+def _run_one(job):
+    i, overrides, seed, label, cycles, params, inputs, isovist = job
+    model = make_model(overrides, seed, cycles, params, inputs).run()
+    return result_row(i, model, overrides, label, isovist)
+
+
+def run_plan(plan, cycles=3000, params=None, inputs=None, progress=None, jobs=1, isovist=False):
+    """Uruchamia plan; jobs > 1 = procesy równoległe (tylko CPython, nie w przeglądarce)."""
+    work = [(i, o, s, l, cycles, params, inputs, isovist) for i, (o, s, l) in enumerate(plan)]
     rows = []
-    for i, (overrides, seed, label) in enumerate(plan):
-        model = make_model(overrides, seed, cycles, params, inputs).run()
-        rows.append(result_row(i, model, overrides, label))
+    if jobs and jobs > 1:
+        import multiprocessing as mp
+        with mp.Pool(jobs) as pool:
+            for k, row in enumerate(pool.imap(_run_one, work, chunksize=1)):
+                rows.append(row)
+                if progress:
+                    progress(k + 1, len(plan))
+        return rows
+    for k, job in enumerate(work):
+        rows.append(_run_one(job))
         if progress:
-            progress(i + 1, len(plan))
+            progress(k + 1, len(plan))
     return rows
 
 
@@ -1962,6 +2057,49 @@ def test_controlled_planting_constant_area():
     assert abs(areas[0] - 2500.0) <= one
 
 
+def test_band_planting_clearance_and_area():
+    roads, _o, _b = generate_park(3)
+    idx = SegIndex(roads)
+    for d in (0.0, 10.0, 20.0):
+        p = resolved_params({"planting": "controlled", "bush_form": "band", "bush_junction_distance": d,
+                             "bush_junction_share": 1.0, "bush_area_total": 1500.0})
+        obs, info = plant_bushes(roads, p)
+        assert info["n_bushes"] == info["n_target"] == 62
+        assert abs(info["area"] - 62 * 24.0) < 1e-6
+        for rings in obs:
+            for q in rings[0]:
+                assert idx.nearest(q) >= p["bush_path_offset"] - 1e-6
+        # faktyczny odstęp pierwszych odcinków od węzła nie mniejszy niż zadany (min. off + w)
+        assert info["setback_mean"] >= max(d, 3.0) - 1e-6
+    # pasy się nie nakładają: środki odcinków pasów oddalone o co najmniej szerokość
+    cs = [(sum(q[0] for q in r[0][:-1]) / 4, sum(q[1] for q in r[0][:-1]) / 4) for r in obs]
+    o = Obstacles(obs)
+    for c in cs:
+        assert len(o.containing(c)) == 1
+
+
+def test_cortisol_gain_parameter():
+    m = _tiny_model({"bot_nb": 0, "cortisol_gain": 0.4})
+    ph = m.phantoms[0]
+    ph.update_psychophysiology(m)
+    c = 0.5 * 0.999
+    assert abs(ph.cortisol - (c + 0.4 * 0.5 / (c + 1) ** 2)) < 1e-12
+
+
+def test_parallel_plan_matches_serial():
+    if sys.platform == "emscripten":      # w przeglądarce (Pyodide) nie ma procesów
+        return
+    plan = batch_plan({"bot_nb": [5, 10]}, 1, 1)
+    a = run_plan(plan, cycles=80)
+    b = run_plan(plan, cycles=80, jobs=2)
+    assert a == b
+
+
+def test_isovist_row_columns():
+    rows = run_plan([({"planting": "controlled"}, 1, "")], cycles=300, isovist=True)
+    assert rows[0]["isovist_area_mean"] > 0 and "rho_area_adrenaline" in rows[0]
+
+
 def test_isovist_open_and_blocked():
     empty = Obstacles([])
     area, mean_ray, blocked = isovist((0.0, 0.0), empty, 10.0, 72)
@@ -2097,7 +2235,8 @@ def main(argv):
     ap.add_argument("--delta", type=float, default=0.1, help="OAT: względna zmiana parametru")
     ap.add_argument("--samples", type=int, default=40, help="LHS: liczba próbek")
     ap.add_argument("--repeat", type=int, default=3)
-    ap.add_argument("--isovist", action="store_true", help="--run: policz izowisty i korelację ze stresem")
+    ap.add_argument("--isovist", action="store_true", help="policz izowisty i korelację ze stresem (--run i eksperymenty)")
+    ap.add_argument("--jobs", type=int, default=1, help="liczba procesów równoległych w eksperymentach")
     ap.add_argument("--set", action="append", default=[], metavar="KLUCZ=WARTOŚĆ")
     ap.add_argument("--csv", default=None, help="plik wynikowy CSV (wiersz = przebieg)")
     ap.add_argument("--summary", default=None, help="plik CSV z podsumowaniem (średnie, elastyczności, korelacje)")
@@ -2176,7 +2315,7 @@ def main(argv):
             plan = oat_plan(a.params.split(",") if a.params else None, a.delta, a.repeat, a.seed, params)
         else:
             plan = lhs_plan(a.params.split(",") if a.params else None, a.samples, a.seed)
-        rows = run_plan(plan, cycles, params, inputs, prog)
+        rows = run_plan(plan, cycles, params, inputs, prog, a.jobs, a.isovist)
         print(file=sys.stderr)
         if a.csv:
             _write(a.csv, dict_rows_csv(rows))
