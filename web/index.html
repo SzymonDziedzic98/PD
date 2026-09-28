@@ -495,6 +495,8 @@ def _osm_geojson(path):
   RESTART = new Set(JSON.parse(py.runPython("json.dumps(sorted(psm.RESTART_KEYS))")));
   CHOICES = JSON.parse(py.runPython("json.dumps(psm.CHOICES)"));
   SENS = JSON.parse(py.runPython("json.dumps(list(psm.SENS_PARAMS))"));
+  GAP = py.runPython("psm.OSM_BRIDGE_GAP");
+  renderOsmInfo();
   const numKeys = Object.keys(DEFAULTS).filter((k) => ["int", "float", "NoneType"].includes(TYPES[k]));
   for (const id of ["bP1", "bP2"]) {
     const sel = $(id);
@@ -640,8 +642,8 @@ async function fetchOsm() {
     osmJson = data; osmName = name;
     $("btnOsmSave").disabled = false;
     $("osmInfo").textContent = name + ": " + info.roads + L(" odcinków ścieżek, ", " path segments, ") + info.obstacles + L(" przeszkód", " obstacles") +
-      (info.bridges ? L("; połączono ", "; joined ") + info.parts_before + L(" rozłącznych części ", " separate parts with ") + info.bridges + L(" łącznikami (do 25 m)", " links (up to 25 m)") : "") +
-      (info.parts_after > 1 ? L("; zostało ", "; ") + info.parts_after + L(" części (dalej niż 25 m)", " parts remain (further apart than 25 m)") : "") + ".";
+      (info.bridges ? L("; połączono ", "; joined ") + info.parts_before + L(" rozłącznych części ", " separate parts with ") + info.bridges + L(` łącznikami (do ${GAP} m)`, ` links (up to ${GAP} m)`) : "") +
+      (info.parts_after > 1 ? L("; zostało ", "; ") + info.parts_after + L(` części (dalej niż ${GAP} m)`, ` parts remain (further apart than ${GAP} m)`) : "") + ".";
     sourceChanged();
     await initModel();
   } catch (e) {
@@ -1040,7 +1042,7 @@ window.addEventListener("resize", () => { if (net) { sizeCanvas(); draw(); } });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => draw());
 
 // ---------- język ----------
-let osmInfoSet = false, isoCmp = null;
+let osmInfoSet = false, isoCmp = null, GAP = 25;
 
 function runLabel() { $("btnRun").textContent = running ? L("Pauza", "Pause") : L("Start", "Run"); }
 
@@ -1072,8 +1074,8 @@ function renderLayerInfo() {
 function renderOsmInfo() {
   if (osmInfoSet) return;
   $("osmInfo").textContent = L(
-    "Ścieżki (highway=footway, path, …) w granicach parku; przeszkody: zarośla, zadrzewienia i lasy, żywopłoty, mury, szpalery drzew i budynki. Rozłączne kawałki ścieżek (np. po drugiej stronie ulicy) są łączone odcinkami do 25 m. Pobrane parki są zapamiętywane w przeglądarce.",
-    "Paths (highway=footway, path, …) inside the park boundary; obstacles: scrub, woods and forests, hedges, walls, tree rows and buildings. Separate pieces of the path network (e.g. across a street) are joined by links of up to 25 m. Fetched parks are cached in the browser.");
+    `Ścieżki (highway=footway, path, …) w granicach parku; przeszkody: zarośla, zadrzewienia i lasy, żywopłoty, mury, szpalery drzew i budynki. Rozłączne kawałki ścieżek (np. po drugiej stronie ulicy) są łączone odcinkami do ${GAP} m. Pobrane parki są zapamiętywane w przeglądarce.`,
+    `Paths (highway=footway, path, …) inside the park boundary; obstacles: scrub, woods and forests, hedges, walls, tree rows and buildings. Separate pieces of the path network (e.g. across a street) are joined by links of up to ${GAP} m. Fetched parks are cached in the browser.`);
 }
 
 I18N.onChange(() => {
