@@ -77,7 +77,7 @@ DEFAULTS = {
     "park_bushes": 70,
     # --- rozszerzenia (wartości domyślne = zachowanie jak w GAMA) ---
     # graf botów: "weighted" = ten sam ważony graf co phantom (jak w GAMA), "plain" = same długości
-    "bot_graph": "weighted",
+    "bot_graph": "plain",
     # pamięć strachu: "shared" = na odcinku, wspólna (jak w GAMA), "individual" = osobna dla każdego phantoma
     "fear_scope": "shared",
     # nasadzenia: "default" = park generowany -> losowe krzewy, plik -> przeszkody z pliku;
@@ -138,7 +138,7 @@ GUI_PARAMETERS = [
         ("reweight_every", "Przeliczanie grafu co (cykli)"),
     ]),
     ("Warianty mechaniki", [
-        ("bot_graph", "Graf botów (weighted = jak GAMA)"),
+        ("bot_graph", "Graf botów (plain = boty nie znają strachu phantoma; weighted = jak GAMA)"),
         ("fear_scope", "Pamięć strachu (shared = jak GAMA)"),
     ]),
     ("Nasadzenia", [
@@ -1973,7 +1973,7 @@ def test_query_mentions_park_and_city():
 
 
 def test_bots_share_weighted_graph():
-    m = _tiny_model({"bot_nb": 3, "aversion_strength": 5.0})
+    m = _tiny_model({"bot_nb": 3, "aversion_strength": 5.0, "bot_graph": "weighted"})
     m.net.edges[1].fear_memory = 1.0
     v = m.graph_version
     m.rebuild_graph()
@@ -2020,8 +2020,10 @@ def test_plain_bot_graph_ignores_fear():
     assert bot.route_weights(m) == m.net.lengths
     r = m.net.route((m.net.edges[0], 90.0), (m.net.edges[3], 99.0), bot.route_weights(m))
     assert any(leg[0] is m.net.edges[1] for leg in r)   # krótsza droga przez "straszny" odcinek
-    m2 = _tiny_model({"bot_nb": 1, "aversion_strength": 5.0})
-    assert m2.bots[0].route_weights(m2) is None           # domyślnie jak w GAMA: graf ważony
+    m2 = _tiny_model({"bot_nb": 1, "aversion_strength": 5.0, "bot_graph": "weighted"})
+    assert m2.bots[0].route_weights(m2) is None           # weighted = jak w GAMA: wspólny graf ważony
+    m3 = _tiny_model({"bot_nb": 1, "aversion_strength": 5.0})
+    assert m3.bots[0].route_weights(m3) == m3.net.lengths  # domyślnie boty nie znają strachu phantoma
 
 
 def test_edge_stats_accumulate():

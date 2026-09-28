@@ -31,6 +31,7 @@ BASE = {
     "bush_junction_share": 1.0,
     "park_seed": 1,
     "isovist_spacing": 2.0,
+    "bot_graph": "plain",  # boty nie znają strachu phantoma
 }
 SETBACKS = [0.0, 5.0, 10.0, 15.0, 20.0]
 FORMS = ["clumps", "band"]

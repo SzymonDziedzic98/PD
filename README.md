@@ -31,10 +31,11 @@ Symulacja zatrzymuje się po 10 000 cyklach; w cyklu 9999 wyniki są dopisywane 
 
 ### Rozszerzenia (pod artykuł do URBAN DESIGN International)
 
-Domyślne wartości nowych parametrów dają wyniki identyczne jak wcześniej (jak w GAMA).
+Domyślne wartości nowych parametrów dają wyniki identyczne jak w GAMA, z jednym wyjątkiem: `bot_graph` domyślnie
+wynosi `plain`, bo boty nie powinny znać uczuć phantoma (decyzja autora, 28.09.2026). Zachowanie z GAMA: `bot_graph = weighted`.
 
-- `bot_graph`: `weighted` (jak w GAMA: boty chodzą po tym samym ważonym grafie, więc też omijają odcinki,
-  na których phantom się bał) albo `plain` (boty wybierają trasy tylko po długości).
+- `bot_graph`: `plain` (domyślnie: boty wybierają trasy tylko po długości) albo `weighted` (jak w GAMA: boty chodzą po tym samym ważonym grafie, więc też omijają odcinki,
+  na których phantom się bał).
 - `fear_scope`: `shared` (jak w GAMA) albo `individual` (każdy phantom ma własną pamięć strachu).
 - `planting = controlled`: sterowane nasadzenia przy stałej łącznej powierzchni krzewów (`bush_area_total`),
   w formie zwartych kęp (`bush_form = clumps`) albo pasów wzdłuż ścieżki (`band`).
