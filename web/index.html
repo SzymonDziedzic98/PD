@@ -199,7 +199,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
           <input type="text" id="osmCustom" placeholder="np. Park Tołpy"></div>
         <div class="controls"><button class="btn" id="btnOsm">Pobierz z OSM</button>
           <button class="btn" id="btnOsmSave" disabled>Zapisz GeoJSON</button></div>
-        <p class="hint" id="osmInfo">Ścieżki (highway=footway, path, …) w granicach parku; przeszkody: zarośla, zadrzewienia i lasy, żywopłoty, mury, szpalery drzew i budynki. Rozłączne kawałki ścieżek (np. po drugiej stronie ulicy) są łączone odcinkami do 25 m. Pobrane parki są zapamiętywane w przeglądarce.</p>
+        <p class="hint" id="osmInfo">Ścieżki (highway=footway, path, …) w granicach parku; przeszkody: zarośla, zadrzewienia i lasy, żywopłoty, mury, szpalery drzew i budynki. Rozłączne kawałki ścieżek (np. po drugiej stronie ulicy) są łączone odcinkami do 50 m. Pobrane parki są zapamiętywane w przeglądarce.</p>
       </div>
       <div id="srcFiles" hidden>
         <div class="field stack"><label for="roadsFile">Ścieżki (np. Staszica_SHP_sciezki_01.shp)</label>
@@ -623,8 +623,8 @@ async function fetchOsm() {
     osmJson = data; osmName = name;
     $("btnOsmSave").disabled = false;
     $("osmInfo").textContent = name + ": " + info.roads + " odcinków ścieżek, " + info.obstacles + " przeszkód" +
-      (info.bridges ? "; połączono " + info.parts_before + " rozłącznych części " + info.bridges + " łącznikami (do 25 m)" : "") +
-      (info.parts_after > 1 ? "; zostało " + info.parts_after + " części (dalej niż 25 m)" : "") + ".";
+      (info.bridges ? "; połączono " + info.parts_before + " rozłącznych części " + info.bridges + " łącznikami (do 50 m)" : "") +
+      (info.parts_after > 1 ? "; zostało " + info.parts_after + " części (dalej niż 50 m)" : "") + ".";
     sourceChanged();
     await initModel();
   } catch (e) {
