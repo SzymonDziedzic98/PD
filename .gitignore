@@ -8,3 +8,6 @@
 .metadata/
 .project
 .settings/
+
+# Python
+__pycache__/
