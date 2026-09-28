@@ -199,7 +199,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
           <input type="text" id="osmCustom" placeholder="np. Park Tołpy"></div>
         <div class="controls"><button class="btn" id="btnOsm">Pobierz z OSM</button>
           <button class="btn" id="btnOsmSave" disabled>Zapisz GeoJSON</button></div>
-        <p class="hint" id="osmInfo">Ścieżki (highway=footway, path, …) w granicach parku; przeszkody: zarośla, żywopłoty, szpalery drzew i budynki.</p>
+        <p class="hint" id="osmInfo">Ścieżki (highway=footway, path, …) w granicach parku; przeszkody: zarośla, zadrzewienia i lasy, żywopłoty, mury, szpalery drzew i budynki. Rozłączne kawałki ścieżek (np. po drugiej stronie ulicy) są łączone odcinkami do 25 m. Pobrane parki są zapamiętywane w przeglądarce.</p>
       </div>
       <div id="srcFiles" hidden>
         <div class="field stack"><label for="roadsFile">Ścieżki (np. Staszica_SHP_sciezki_01.shp)</label>
@@ -429,7 +429,7 @@ def _load(roads_path, obs_path):
     rd = open(roads_path, "rb").read() if roads_path else None
     od = open(obs_path, "rb").read() if obs_path else None
     _INPUTS = psm.load_inputs(rd, od, roads_path or "", obs_path or "")
-    return json.dumps({"roads": len(_INPUTS[0]), "obstacles": len(_INPUTS[1])})
+    return json.dumps(dict(psm.LOAD_INFO, roads=len(_INPUTS[0]), obstacles=len(_INPUTS[1])))
 
 def _clean(o):
     # NaN (np. brak zmienności wyniku) -> null, bo JSON.parse nie przyjmuje NaN
@@ -591,16 +591,29 @@ async function fetchOsm() {
   $("osmInfo").textContent = "Pobieranie „" + name + "” z Overpass API…";
   try {
     const q = py.globals.get("psm").overpass_query(name);
-    const endpoints = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
+    const cacheKey = "osm:" + q;
     let data = null, lastErr = null;
-    for (const url of endpoints) {
+    try { data = localStorage.getItem(cacheKey); } catch (e) { data = null; }
+    const endpoints = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter",
+                       "https://overpass.private.coffee/api/interpreter"];
+    for (const url of data === null ? endpoints : []) {
+      const host = new URL(url).host;
+      $("osmInfo").textContent = "Pobieranie „" + name + "” z " + host + "… (do 60 s)";
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 60000);
       try {
-        const r = await fetch(url, { method: "POST", body: "data=" + encodeURIComponent(q),
+        const r = await fetch(url, { method: "POST", body: "data=" + encodeURIComponent(q), signal: ctl.signal,
           headers: { "Content-Type": "application/x-www-form-urlencoded" } });
-        if (!r.ok) throw new Error("HTTP " + r.status);
+        if (!r.ok) throw new Error(host + ": HTTP " + r.status + (r.status === 429 ? " (serwer przeciążony)" : ""));
         data = await r.text();
+        if (!data.trim().startsWith("{")) throw new Error(host + ": odpowiedź nie jest JSON (limit czasu serwera)");
+        if (JSON.parse(data).remark && !JSON.parse(data).elements.length) throw new Error(host + ": " + JSON.parse(data).remark);
+        try { localStorage.setItem(cacheKey, data); } catch (e) { /* za duże do zapamiętania */ }
         break;
-      } catch (e) { lastErr = e; }
+      } catch (e) {
+        data = null;
+        lastErr = e.name === "AbortError" ? new Error(host + ": brak odpowiedzi w 60 s") : e;
+      } finally { clearTimeout(timer); }
     }
     if (data === null) throw lastErr || new Error("brak odpowiedzi");
     const n = JSON.parse(data).elements.length;
@@ -609,7 +622,9 @@ async function fetchOsm() {
     const info = JSON.parse(py.globals.get("_load")("/tmp/osm.json", null));
     osmJson = data; osmName = name;
     $("btnOsmSave").disabled = false;
-    $("osmInfo").textContent = name + ": " + info.roads + " odcinków ścieżek, " + info.obstacles + " przeszkód.";
+    $("osmInfo").textContent = name + ": " + info.roads + " odcinków ścieżek, " + info.obstacles + " przeszkód" +
+      (info.bridges ? "; połączono " + info.parts_before + " rozłącznych części " + info.bridges + " łącznikami (do 25 m)" : "") +
+      (info.parts_after > 1 ? "; zostało " + info.parts_after + " części (dalej niż 25 m)" : "") + ".";
     sourceChanged();
     await initModel();
   } catch (e) {

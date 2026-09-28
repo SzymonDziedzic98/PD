@@ -22,7 +22,9 @@ Symulacja zatrzymuje się po 10 000 cyklach; w cyklu 9999 wyniki są dopisywane 
   - `python web/psm.py --test`
   - `python web/psm.py --run --roads Staszica_SHP_sciezki_01.shp --obstacles Staszica_SHP_krzaki_09.shp`
   - `python web/psm.py --batch --aversion 0,2.5,5,10 --repeat 5 --cycles 10000 --csv batch_results.csv`
-  - `python web/psm.py --fetch-osm "Park Staszica" --out park_staszica.geojson` (Overpass API, wymaga internetu)
+  - `python web/psm.py --fetch-osm "Park Staszica" --out park_staszica.geojson` (Overpass API, wymaga internetu).
+    Przeszkody z OSM: zarośla, zadrzewienia i lasy (także relacje multipolygon), żywopłoty, mury, szpalery drzew, budynki.
+    Rozłączne kawałki ścieżek z OSM są łączone odcinkami do 25 m (`OSM_BRIDGE_GAP`); pliki SHP/GeoJSON zostają bez zmian.
 - `web/index.html` – uruchamia `psm.py` w przeglądarce (Pyodide): mapa parku z pamięcią strachu na ścieżkach,
   strefy Halla phantoma, wykres adrenaliny, kortyzolu i czujności, batch, testy i pobieranie CSV.
   Otwórz przez serwer HTTP, np. `cd web && python -m http.server`, potem `http://localhost:8000`.
