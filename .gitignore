@@ -1,0 +1,10 @@
+# Wyniki symulacji GAMA
+**/results/
+**/snapshot/
+**/output/
+*.log
+
+# Metadane Eclipse/GAMA
+.metadata/
+.project
+.settings/
