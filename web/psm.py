@@ -1599,15 +1599,15 @@ class Model:
 # Wczytywanie danych do modelu (wspólne dla CLI i przeglądarki)
 # ---------------------------------------------------------------------------
 
-OSM_BRIDGE_GAP = 25.0
+OSM_BRIDGE_GAP = 50.0   # m; np. szeroka ulica rozdzielająca dwie części parku
 LOAD_INFO = {}
 
 
 def load_inputs(roads_data=None, obstacles_data=None, roads_name="", obstacles_name="", bridge_gap=None):
     """Bajty/tekst plików -> (roads, obstacles, boundary). Obsługuje .shp i .geojson/.json.
 
-    bridge_gap: łączenie rozłącznych części sieci (m); domyślnie OSM_BRIDGE_GAP dla danych z Overpass,
-    0 dla plików (np. SHP ze schematami A/B, które mają zostać jak w GAMA)."""
+    bridge_gap: łączenie rozłącznych części sieci (m); domyślnie OSM_BRIDGE_GAP dla danych z Overpass
+    i GeoJSON (zwykle wyeksportowanych z OSM), 0 dla SHP (schematy A/B mają zostać jak w GAMA)."""
     roads, obstacles, boundary = [], [], []
     is_osm = []
 
@@ -1620,6 +1620,7 @@ def load_inputs(roads_data=None, obstacles_data=None, roads_name="", obstacles_n
         if obj.get("elements") is not None:
             is_osm.append(True)
             return osm_to_features(obj)
+        is_osm.append(True)
         return geojson_features(obj)
 
     feats = []
@@ -2114,6 +2115,18 @@ def test_bridge_gaps_joins_close_parts_only():
     assert len(set(_road_components(roads))) == 2
     net = Network(roads, largest_component=True)
     assert abs(net.total_len - (100 + 50 + 10)) < 1e-6   # a podzielona na dwie części + łącznik 10 m
+
+
+def test_geojson_bridged_but_shp_distance_kept():
+    fc = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"layer": "roads"},
+         "geometry": {"type": "LineString", "coordinates": [[0, 0], [100, 0]]}},
+        {"type": "Feature", "properties": {"layer": "roads"},
+         "geometry": {"type": "LineString", "coordinates": [[140, 0], [240, 0]]}}]}
+    load_inputs(json.dumps(fc), None, "p.geojson")
+    assert LOAD_INFO["parts_before"] == 2 and LOAD_INFO["parts_after"] == 1   # 40 m < OSM_BRIDGE_GAP
+    load_inputs(json.dumps(fc), None, "p.geojson", bridge_gap=0)
+    assert LOAD_INFO["parts_after"] == 2
 
 
 def test_assemble_rings_from_fragments():
