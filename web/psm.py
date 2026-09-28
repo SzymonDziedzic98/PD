@@ -67,6 +67,7 @@ DEFAULTS = {
     "adrenaline_cooldown": 0.99,
     "cortisol_cooldown": 0.999,
     "initial_level": 0.5,          # startowe vigilance / adrenaline / cortisol
+    "cortisol_gain": 0.2,          # cortisol + 0.2 * adrenaline / (cortisol + 1)^2
     # tylko port Pythona
     "largest_component": True,
     "park": "generated",           # "generated" albo "file" (sieć podana z zewnątrz)
@@ -74,6 +75,35 @@ DEFAULTS = {
     "park_width": 320.0,
     "park_height": 240.0,
     "park_bushes": 70,
+    # --- rozszerzenia (wartości domyślne = zachowanie jak w GAMA) ---
+    # graf botów: "weighted" = ten sam ważony graf co phantom (jak w GAMA), "plain" = same długości
+    "bot_graph": "plain",
+    # pamięć strachu: "shared" = na odcinku, wspólna (jak w GAMA), "individual" = osobna dla każdego phantoma
+    "fear_scope": "shared",
+    # nasadzenia: "default" = park generowany -> losowe krzewy, plik -> przeszkody z pliku;
+    # "controlled" = sterowane nasadzenia przy stałej powierzchni; "none" = bez przeszkód
+    "planting": "default",
+    "planting_seed": 1,
+    "bush_area_total": 2500.0,     # m², łączna powierzchnia krzewów (stała między wariantami)
+    "bush_form": "clumps",         # "clumps" = zwarte kępy (koła), "band" = pasy wzdłuż ścieżki
+    "bush_radius": 4.0,            # m (kępy)
+    "bush_band_width": 2.0,        # m (pasy)
+    "bush_band_length": 12.0,      # m (pasy, długość jednego odcinka)
+    "bush_junction_share": 0.5,    # udział powierzchni w narożnikach skrzyżowań
+    "bush_junction_distance": 2.0, # m, odstęp krawędzi krzewu od węzła skrzyżowania
+    "bush_path_offset": 1.0,       # m, odstęp krawędzi krzewu od osi ścieżki
+    "junction_zone": 15.0,         # m, krzewy "przy ścieżce" leżą dalej niż tyle od skrzyżowań
+    # izowisty (analiza widoczności)
+    "isovist_spacing": 5.0,        # m, co ile próbkować ścieżki
+    "isovist_rays": 72,
+    "isovist_radius": None,        # None = strefa publiczna
+}
+
+CHOICES = {
+    "bot_graph": ["weighted", "plain"],
+    "fear_scope": ["shared", "individual"],
+    "planting": ["default", "controlled", "none"],
+    "bush_form": ["clumps", "band"],
 }
 
 HALL_BASE = {"intimate": 0.45, "personal": 1.2, "social": 3.6, "public": 10.0}
@@ -97,6 +127,7 @@ GUI_PARAMETERS = [
         ("adrenaline_threshold", "Próg lęku (adrenalina)"),
         ("adrenaline_cooldown", "Wygaszanie adrenaliny"),
         ("cortisol_cooldown", "Wygaszanie kortyzolu"),
+        ("cortisol_gain", "Wzmocnienie kortyzolu"),
         ("initial_level", "Poziom startowy"),
         ("fear_spacing", "Min. odstęp znaczników strachu (m)"),
     ]),
@@ -105,6 +136,23 @@ GUI_PARAMETERS = [
         ("fear_deposit", "Depozyt strachu"),
         ("fear_decay", "Zanikanie strachu"),
         ("reweight_every", "Przeliczanie grafu co (cykli)"),
+    ]),
+    ("Warianty mechaniki", [
+        ("bot_graph", "Graf botów (plain = boty nie znają strachu phantoma; weighted = jak GAMA)"),
+        ("fear_scope", "Pamięć strachu (shared = jak GAMA)"),
+    ]),
+    ("Nasadzenia", [
+        ("planting", "Nasadzenia"),
+        ("planting_seed", "Seed nasadzeń"),
+        ("bush_area_total", "Łączna powierzchnia krzewów (m²)"),
+        ("bush_form", "Forma (kępy / pas)"),
+        ("bush_radius", "Promień kępy (m)"),
+        ("bush_band_width", "Szerokość pasa (m)"),
+        ("bush_band_length", "Długość odcinka pasa (m)"),
+        ("bush_junction_share", "Udział w narożnikach skrzyżowań"),
+        ("bush_junction_distance", "Odstęp od węzła skrzyżowania (m)"),
+        ("bush_path_offset", "Odstęp od osi ścieżki (m)"),
+        ("junction_zone", "Strefa skrzyżowania (m)"),
     ]),
     ("Przebieg", [
         ("end_cycle", "Koniec (cykl)"),
@@ -120,7 +168,10 @@ GUI_PARAMETERS = [
 
 # parametry, których zmiana wymaga ponownej inicjalizacji
 RESTART_KEYS = {"bot_nb", "phantom_nb", "bot_speed_kmh", "bot_speed_sd", "phantom_speed_kmh",
-                "park_seed", "park_width", "park_height", "park_bushes", "step_min", "largest_component"}
+                "park_seed", "park_width", "park_height", "park_bushes", "step_min", "largest_component",
+                "bot_graph", "fear_scope", "planting", "planting_seed", "bush_area_total", "bush_radius",
+                "bush_junction_share", "bush_junction_distance", "bush_path_offset", "junction_zone",
+                "bush_form", "bush_band_width", "bush_band_length"}
 
 
 def resolved_params(params=None):
@@ -133,6 +184,11 @@ def resolved_params(params=None):
     for k, base in HALL_BASE.items():
         if p[k] in (None, ""):
             p[k] = base * float(p["hall_multiplier"])
+    if p["isovist_radius"] in (None, ""):
+        p["isovist_radius"] = p["public"]
+    for k, opts in CHOICES.items():
+        if p[k] not in opts:
+            raise ValueError("%s musi być jednym z %s" % (k, opts))
     return p
 
 
@@ -513,6 +569,324 @@ def _point_seg_dist(p, a, b):
     return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
 
 
+class SegIndex:
+    """Siatka przestrzenna odcinków: szybka odległość punktu od najbliższej ścieżki."""
+
+    def __init__(self, polylines, cell=20.0):
+        self.cell = cell
+        self.grid = {}
+        for pts in polylines:
+            for k in range(len(pts) - 1):
+                a, b = pts[k], pts[k + 1]
+                for i in range(int(math.floor(min(a[0], b[0]) / cell)), int(math.floor(max(a[0], b[0]) / cell)) + 1):
+                    for j in range(int(math.floor(min(a[1], b[1]) / cell)), int(math.floor(max(a[1], b[1]) / cell)) + 1):
+                        self.grid.setdefault((i, j), []).append((a, b))
+
+    def nearest(self, p, limit=60.0):
+        """Odległość do najbliższego odcinka (albo limit, gdy dalej)."""
+        c = self.cell
+        k = int(math.ceil(limit / c))
+        ci, cj = int(math.floor(p[0] / c)), int(math.floor(p[1] / c))
+        best = limit
+        for i in range(ci - k, ci + k + 1):
+            for j in range(cj - k, cj + k + 1):
+                for a, b in self.grid.get((i, j), ()):
+                    d = _point_seg_dist(p, a, b)
+                    if d < best:
+                        best = d
+        return best
+
+
+def circle_ring(c, r, n=16):
+    ring = [(c[0] + r * math.cos(2 * math.pi * k / n), c[1] + r * math.sin(2 * math.pi * k / n)) for k in range(n)]
+    ring.append(ring[0])
+    return ring
+
+
+def ring_area(ring):
+    return abs(sum(ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1] for i in range(len(ring) - 1))) / 2.0
+
+
+def junctions(roads, probe=5.0):
+    """Węzły stopnia >= 3 z kierunkami ramion (kąt do punktu ok. probe m wzdłuż ścieżki)."""
+    net = Network(roads, largest_component=False)
+    out = []
+    for n, edges in enumerate(net.adj):
+        if len(edges) < 3:
+            continue
+        angs = []
+        for e in edges:
+            if e.a == n:
+                q = e.point_at(min(probe, e.length))[0]
+                angs.append(math.atan2(q[1] - net.nodes[n][1], q[0] - net.nodes[n][0]))
+            if e.b == n:
+                q = e.point_at(max(0.0, e.length - probe))[0]
+                angs.append(math.atan2(q[1] - net.nodes[n][1], q[0] - net.nodes[n][0]))
+        out.append((net.nodes[n], sorted(angs)))
+    return out
+
+
+def plant_bushes(roads, p):
+    """Sterowane nasadzenia przy stałej łącznej powierzchni.
+
+    Forma "clumps": krzewy-koła (16-kąt) o promieniu bush_radius. W narożnikach skrzyżowań stoją na dwusiecznej
+    kąta między ramionami, z krawędzią bush_junction_distance od węzła i co najmniej bush_path_offset od osi ścieżek.
+    Forma "band": pasy (prostokąty bush_band_width × bush_band_length) równoległe do ścieżki, z krawędzią
+    bush_path_offset od osi; w narożnikach zaczynają się bush_junction_distance od węzła wzdłuż ramienia.
+    Część bush_junction_share powierzchni trafia do narożników, reszta wzdłuż ścieżek, cała dalej niż
+    junction_zone od skrzyżowań. Gdy narożników brakuje, reszta idzie wzdłuż ścieżek (zob. info["junction_share"]).
+    """
+    rng = random.Random(int(p["planting_seed"]))
+    form = p["bush_form"]
+    r = float(p["bush_radius"])
+    w = float(p["bush_band_width"])
+    L = float(p["bush_band_length"])
+    off = float(p["bush_path_offset"])
+    jd = float(p["bush_junction_distance"])
+    zone = float(p["junction_zone"])
+    one = ring_area(circle_ring((0.0, 0.0), r)) if form == "clumps" else w * L
+    n_total = int(round(float(p["bush_area_total"]) / one))
+    n_junc = int(round(n_total * float(p["bush_junction_share"])))
+    idx = SegIndex(roads)
+    juncs = junctions(roads)
+    placed = []          # wielokąty
+    disks = {}           # siatka próbek (punkt, promień) do sprawdzania nakładania
+    gc = 6.0
+    band_rad = math.sqrt((w / 2) ** 2 + 0.25)
+
+    def shape_clump(c):
+        return circle_ring(c, r), [(c, r)], [c], r
+
+    def shape_band(start, ang, side):
+        dx, dy = math.cos(ang), math.sin(ang)
+        nx, ny = -dy * side, dx * side
+        c0 = (start[0] + nx * (off + w / 2), start[1] + ny * (off + w / 2))
+        n = max(1, int(math.ceil(L)))
+        cl = [(c0[0] + dx * L * k / n, c0[1] + dy * L * k / n) for k in range(n + 1)]
+        h = w / 2
+        e = (c0[0] + dx * L, c0[1] + dy * L)
+        ring = [(c0[0] - nx * h, c0[1] - ny * h), (e[0] - nx * h, e[1] - ny * h),
+                (e[0] + nx * h, e[1] + ny * h), (c0[0] + nx * h, c0[1] + ny * h)]
+        ring.append(ring[0])
+        # próbki obwodu do kontroli odstępu od ścieżek
+        edge_pts = []
+        for i in range(4):
+            q0, q1 = ring[i], ring[i + 1]
+            m = max(1, int(dist(q0, q1) / 0.5))
+            edge_pts += [(q0[0] + (q1[0] - q0[0]) * t / m, q0[1] + (q1[1] - q0[1]) * t / m) for t in range(m)]
+        return ring, [(q, band_rad) for q in cl], edge_pts, 0.0
+
+    def free(shape):
+        ring, samples, clear_pts, rad = shape
+        # odstęp od osi ścieżek: dla koła środek >= r + off, dla pasa każdy punkt obwodu >= off
+        for q in clear_pts:
+            if idx.nearest(q, rad + off + 1.0) < rad + off - 1e-6:
+                return False
+        for q, rq in samples:
+            gi, gj = int(math.floor(q[0] / gc)), int(math.floor(q[1] / gc))
+            k = int(math.ceil((rq + max(r, band_rad) + 0.3) / gc))
+            for i in range(gi - k, gi + k + 1):
+                for j in range(gj - k, gj + k + 1):
+                    for q2, r2 in disks.get((i, j), ()):
+                        if dist(q, q2) < rq + r2 + 0.3:
+                            return False
+        return True
+
+    def put(shape):
+        placed.append(shape[0])
+        for q, rq in shape[1]:
+            disks.setdefault((int(math.floor(q[0] / gc)), int(math.floor(q[1] / gc))), []).append((q, rq))
+
+    cands = []
+    for node, angs in juncs:
+        if form == "clumps":
+            for k in range(len(angs)):
+                a0 = angs[k]
+                a1 = angs[(k + 1) % len(angs)] + (2 * math.pi if k == len(angs) - 1 else 0.0)
+                gap = a1 - a0
+                if gap < math.radians(30):
+                    continue
+                half = min(gap / 2, math.pi / 2)
+                d = max(jd + r, (r + off) / math.sin(half))
+                mid = a0 + gap / 2
+                cands.append(("c", (node[0] + d * math.cos(mid), node[1] + d * math.sin(mid)), node, 0))
+        else:
+            # pas zaczyna się jd od węzła (nie bliżej niż off + w, bo wszedłby na sąsiednie ramię),
+            # do dwóch odcinków pasa w ciągu wzdłuż każdego ramienia i strony
+            d0 = max(jd, off + w)
+            for ang in angs:
+                for side in (1.0, -1.0):
+                    for piece in range(2):
+                        d = d0 + piece * (L + 0.5)
+                        cands.append(("b", ((node[0] + d * math.cos(ang), node[1] + d * math.sin(ang)), ang, side),
+                                      node, piece))
+    rng.shuffle(cands)
+    # najpierw odcinki najbliżej węzła, potem drugie w ciągu (kolejność losowa w obrębie grupy)
+    cands.sort(key=lambda c: c[3])
+    n_j = 0
+    setbacks = []
+    for kind, arg, node, _piece in cands:
+        if n_j >= n_junc:
+            break
+        sh = shape_clump(arg) if kind == "c" else shape_band(*arg)
+        if free(sh):
+            put(sh)
+            n_j += 1
+            if _piece == 0:
+                setbacks.append(min(dist(q, node) for q in sh[0][:-1]) if kind == "b"
+                                else dist(arg, node) - r)
+    # wzdłuż ścieżek, z dala od skrzyżowań
+    segs = [(rd[k], rd[k + 1]) for rd in roads for k in range(len(rd) - 1) if dist(rd[k], rd[k + 1]) > 0]
+    cum = []
+    tot = 0.0
+    for a_, b_ in segs:
+        tot += dist(a_, b_)
+        cum.append(tot)
+    jnodes = [n for n, _a in juncs]
+    jgrid = {}
+    for q in jnodes:
+        jgrid.setdefault((int(math.floor(q[0] / 50.0)), int(math.floor(q[1] / 50.0))), []).append(q)
+
+    def far_from_junctions(pts):
+        for c in pts:
+            gi, gj = int(math.floor(c[0] / 50.0)), int(math.floor(c[1] / 50.0))
+            k = int(math.ceil(zone / 50.0))
+            for i in range(gi - k, gi + k + 1):
+                for j in range(gj - k, gj + k + 1):
+                    for q in jgrid.get((i, j), ()):
+                        if dist(c, q) < zone:
+                            return False
+        return True
+
+    tries = 0
+    while len(placed) < n_total and tries < 400 * max(1, n_total) and segs:
+        tries += 1
+        u = rng.random() * tot
+        lo, hi = 0, len(cum) - 1
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if cum[mid] < u:
+                lo = mid + 1
+            else:
+                hi = mid
+        a_, b_ = segs[lo]
+        Ls = dist(a_, b_)
+        t = rng.random()
+        px, py = a_[0] + (b_[0] - a_[0]) * t, a_[1] + (b_[1] - a_[1]) * t
+        side = 1.0 if rng.random() < 0.5 else -1.0
+        if form == "clumps":
+            nx, ny = -(b_[1] - a_[1]) / Ls * side, (b_[0] - a_[0]) / Ls * side
+            c = (px + nx * (r + off), py + ny * (r + off))
+            sh = shape_clump(c)
+        else:
+            ang = math.atan2(b_[1] - a_[1], b_[0] - a_[0])
+            start = (px - math.cos(ang) * L / 2, py - math.sin(ang) * L / 2)
+            sh = shape_band(start, ang, side)
+        if far_from_junctions(sh[0][:-1]) and free(sh):
+            put(sh)
+    obstacles = [[ring] for ring in placed]
+    area = sum(ring_area(ring) for ring in placed)
+    info = {"form": form, "n_bushes": len(placed), "n_target": n_total, "area": round(area, 1),
+            "area_target": float(p["bush_area_total"]), "n_junction": n_j,
+            "junction_share": round(n_j / len(placed), 3) if placed else 0.0,
+            # faktyczny odstęp krawędzi krzewów narożnych od węzła (m)
+            "setback_mean": round(sum(setbacks) / len(setbacks), 2) if setbacks else None,
+            "n_junctions": len(juncs), "junction_candidates": len(cands)}
+    return obstacles, info
+
+
+# ---------------------------------------------------------------------------
+# Izowisty (analiza widoczności)
+# ---------------------------------------------------------------------------
+
+def _ray_hit(p, dx, dy, a, b):
+    """Odległość wzdłuż promienia p + t(dx, dy) do odcinka a-b (albo None)."""
+    ex, ey = b[0] - a[0], b[1] - a[1]
+    den = dx * ey - dy * ex
+    if abs(den) < 1e-12:
+        return None
+    wx, wy = a[0] - p[0], a[1] - p[1]
+    t = (wx * ey - wy * ex) / den
+    u = (wx * dy - wy * dx) / den
+    if t >= 0 and 0 <= u <= 1:
+        return t
+    return None
+
+
+def isovist(p, obstacles, radius, rays=72, ignore=()):
+    """Izowista w punkcie p: (pole m², średnia długość promienia, udział promieni zasłoniętych)."""
+    segs = []
+    seen = set()
+    for key in obstacles._cells(p[0] - radius, p[1] - radius, p[0] + radius, p[1] + radius):
+        for a, b, pi in obstacles.grid.get(key, ()):
+            if pi in ignore or (a, b) in seen:
+                continue
+            seen.add((a, b))
+            if _point_seg_dist(p, a, b) <= radius:
+                segs.append((a, b))
+    lengths = []
+    for k in range(rays):
+        ang = 2 * math.pi * k / rays
+        dx, dy = math.cos(ang), math.sin(ang)
+        best = radius
+        for a, b in segs:
+            t = _ray_hit(p, dx, dy, a, b)
+            if t is not None and t < best:
+                best = t
+        lengths.append(best)
+    dth = 2 * math.pi / rays
+    area = sum(0.5 * lengths[k] * lengths[(k + 1) % rays] * math.sin(dth) for k in range(rays))
+    blocked = sum(1 for L in lengths if L < radius - 1e-9) / rays
+    return area, sum(lengths) / rays, blocked
+
+
+def isovist_by_edge(net, obstacles, radius, spacing=5.0, rays=72):
+    """Średnia izowista na każdym odcinku (próbki co spacing m, co najmniej jedna na odcinek)."""
+    out = []
+    for e in net.edges:
+        n = max(1, int(e.length // spacing))
+        vals = []
+        for k in range(n):
+            q = e.point_at((k + 0.5) * e.length / n)[0]
+            vals.append(isovist(q, obstacles, radius, rays, obstacles.containing(q)))
+        out.append((sum(v[0] for v in vals) / n, sum(v[1] for v in vals) / n, sum(v[2] for v in vals) / n))
+    return out
+
+
+def _sd(v):
+    if len(v) < 2:
+        return 0.0
+    m = sum(v) / len(v)
+    return math.sqrt(sum((x - m) ** 2 for x in v) / (len(v) - 1))
+
+
+def spearman(x, y):
+    """Korelacja rang Spearmana (rangi wiązane uśrednione)."""
+    n = len(x)
+    if n < 3:
+        return float("nan")
+
+    def ranks(v):
+        order = sorted(range(n), key=lambda i: v[i])
+        rk = [0.0] * n
+        i = 0
+        while i < n:
+            j = i
+            while j + 1 < n and v[order[j + 1]] == v[order[i]]:
+                j += 1
+            for k in range(i, j + 1):
+                rk[order[k]] = (i + j) / 2.0
+            i = j + 1
+        return rk
+
+    rx, ry = ranks(x), ranks(y)
+    mx, my = sum(rx) / n, sum(ry) / n
+    sxy = sum((a - mx) * (b - my) for a, b in zip(rx, ry))
+    sx = math.sqrt(sum((a - mx) ** 2 for a in rx))
+    sy = math.sqrt(sum((b - my) ** 2 for b in ry))
+    return sxy / (sx * sy) if sx and sy else float("nan")
+
+
 # ---------------------------------------------------------------------------
 # Sieć ścieżek (as_edge_graph)
 # ---------------------------------------------------------------------------
@@ -587,6 +961,8 @@ class Network:
             self.active = list(self.edges)
         if not self.active:
             raise ValueError("sieć ścieżek jest pusta")
+        self.lengths = [e.length for e in self.edges]
+        self.weights = list(self.lengths)
         self.active_len = [e.length for e in self.active]
         self.total_len = sum(self.active_len)
 
@@ -615,20 +991,25 @@ class Network:
         # waga = długość * (1 + aversion_strength * fear_memory)
         for e in self.edges:
             e.weight = e.length * (1.0 + aversion_strength * e.fear_memory)
+        self.weights = [e.weight for e in self.edges]
 
     def random_location(self, rng):
         """any_location_in(one_of(road)): losowa ścieżka, losowy punkt na niej."""
         e = self.active[rng.randrange(len(self.active))]
         return (e, rng.uniform(0.0, e.length))
 
-    def route(self, src, dst):
-        """Najkrótsza trasa (wagi) z (krawędź, s) do (krawędź, s): lista (krawędź, s_od, s_do)."""
+    def route(self, src, dst, weights=None):
+        """Najkrótsza trasa (wagi) z (krawędź, s) do (krawędź, s): lista (krawędź, s_od, s_do).
+
+        weights: lista wag indeksowana id krawędzi; None = wagi krawędzi (graf wspólny).
+        """
+        W = weights if weights is not None else self.weights
         e0, s0 = src
         e1, s1 = dst
         if e0 is e1:
             return [(e0, s0, s1)]
-        f0 = e0.weight / e0.length if e0.length else 1.0
-        f1 = e1.weight / e1.length if e1.length else 1.0
+        f0 = W[e0.id] / e0.length if e0.length else 1.0
+        f1 = W[e1.id] / e1.length if e1.length else 1.0
         best = {}
         prev = {}
         heap = []
@@ -651,7 +1032,7 @@ class Network:
                 best_end = u
             for e in self.adj[u]:
                 v = e.b if e.a == u else e.a
-                nc = cost + e.weight
+                nc = cost + W[e.id]
                 if nc < best.get(v, 1e300):
                     best[v] = nc
                     prev[v] = (e, u)
@@ -756,9 +1137,13 @@ class Mover:
         else:
             self.goto(model)
 
+    def route_weights(self, model):
+        # bot: graf ważony jak w GAMA albo same długości (bot_graph = "plain")
+        return model.bot_weights
+
     def goto(self, model):
         if self.route is None or self.route_ver != model.graph_version:
-            self.route = model.net.route((self.edge, self.s), self.target)
+            self.route = model.net.route((self.edge, self.s), self.target, self.route_weights(model))
             self.route_ver = model.graph_version
             if self.route is None:
                 return
@@ -783,7 +1168,7 @@ class Mover:
 
 class Phantom(Mover):
     __slots__ = ("vigilance", "adrenaline", "cortisol", "total_adrenaline", "total_cortisol",
-                 "total_vigilance", "where_are_they", "where_were_they", "fear_events")
+                 "total_vigilance", "where_are_they", "where_were_they", "fear_events", "fear", "weights")
 
     def __init__(self, net, rng, speed, level):
         Mover.__init__(self, net, rng, speed)
@@ -796,6 +1181,12 @@ class Phantom(Mover):
         self.where_are_they = []
         self.where_were_they = []
         self.fear_events = 0
+        self.fear = {}          # własna pamięć strachu (fear_scope = "individual"): id odcinka -> wartość
+        self.weights = None
+
+    def route_weights(self, model):
+        # phantom: wspólny graf (jak w GAMA) albo własne wagi z własnej pamięci strachu
+        return self.weights if model.p["fear_scope"] == "individual" else None
 
     def distance_number(self, model, q):
         d = dist(self.loc, q)
@@ -827,17 +1218,26 @@ class Phantom(Mover):
         model._ignore = model.obstacles.containing(self.loc)
         self.where_are_they = [self.distance_number(model, b.loc) for b in model.bots]
         self.cortisol = self.cortisol * p["cortisol_cooldown"]
-        self.cortisol = self.cortisol + 0.2 * self.adrenaline / ((self.cortisol + 1.0) * (self.cortisol + 1.0))
+        self.cortisol = self.cortisol + p["cortisol_gain"] * self.adrenaline / ((self.cortisol + 1.0) * (self.cortisol + 1.0))
         self.vigilance = self.required_vigilance()
         self.adrenaline = self.adrenaline * p["adrenaline_cooldown"]
         self.adrenaline = self.adrenaline + self.vigilance
         self.where_were_they = self.where_are_they
-        if self.adrenaline > p["adrenaline_threshold"]:
+        feared = self.adrenaline > p["adrenaline_threshold"]
+        if feared:
             if not any(dist(f[0], self.loc) <= p["fear_spacing"] for f in model.fears):
                 model.fears.append((self.loc, int(min(255.0, 255.0 * self.adrenaline / 20.0))))
-            # odłóż strach na odcinku, na którym stoi phantom
+            # odłóż strach na odcinku, na którym stoi phantom (fear_memory odcinka = suma wszystkich phantomów)
             self.edge.fear_memory += p["fear_deposit"]
+            self.fear[self.edge.id] = self.fear.get(self.edge.id, 0.0) + p["fear_deposit"]
             self.fear_events += 1
+        # mapa stresu: bodźce odebrane na odcinku, na którym phantom stoi w tym cyklu
+        st = model.edge_stats[self.edge.id]
+        st[0] += 1
+        st[1] += self.adrenaline
+        st[2] += self.vigilance
+        if feared:
+            st[3] += 1
         self.total_adrenaline += self.adrenaline
         self.total_cortisol += self.cortisol
         self.total_vigilance += self.vigilance
@@ -863,9 +1263,18 @@ class Model:
         else:
             self.source = "file"
         roads, obstacles, boundary = self._normalize(roads, obstacles or [], boundary or [])
+        self.planting_info = {}
+        if p["planting"] == "controlled":
+            obstacles, self.planting_info = plant_bushes(roads, p)
+        elif p["planting"] == "none":
+            obstacles = []
         self.boundary = boundary
         self.net = Network(roads, largest_component=bool(p["largest_component"]))
         self.obstacles = Obstacles(obstacles)
+        self.bot_weights = None if p["bot_graph"] == "weighted" else self.net.lengths
+        # [cykle phantoma na odcinku, suma adrenaliny, suma czujności, epizody lęku]
+        self.edge_stats = [[0, 0.0, 0.0, 0] for _ in self.net.edges]
+        self.isovist_edges = None
         self._ignore = set()
         self.step_s = float(p["step_min"]) * 60.0
         self.cycle = 0
@@ -895,13 +1304,23 @@ class Model:
 
     # --- reflexy globalne ---
     def rebuild_graph(self):
-        self.net.reweight(float(self.p["aversion_strength"]))
+        beta = float(self.p["aversion_strength"])
+        self.net.reweight(beta)
+        if self.p["fear_scope"] == "individual":
+            for ph in self.phantoms:
+                w = list(self.net.lengths)
+                for eid, f in ph.fear.items():
+                    w[eid] = self.net.lengths[eid] * (1.0 + beta * f)
+                ph.weights = w
         self.graph_version += 1
 
     def update_aversion(self):
         decay = float(self.p["fear_decay"])
         for e in self.net.edges:
             e.fear_memory *= decay
+        for ph in self.phantoms:
+            for eid in ph.fear:
+                ph.fear[eid] *= decay
         self.rebuild_graph()
 
     def save_results(self):
@@ -960,9 +1379,50 @@ class Model:
             w.writerow([e.id, round(e.length, 3), e.fear_memory, e.weight])
         return buf.getvalue()
 
+    def edge_csv(self):
+        """Mapa stresu i widoczności na odcinkach."""
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["edge_id", "length_m", "phantom_cycles", "mean_adrenaline", "vigilance_sum",
+                    "fear_events", "fear_memory", "weight", "isovist_area_m2", "isovist_mean_ray_m", "isovist_blocked_share"])
+        for e in self.net.edges:
+            v, a, g, f = self.edge_stats[e.id]
+            iso = self.isovist_edges[e.id] if self.isovist_edges else ("", "", "")
+            w.writerow([e.id, round(e.length, 3), v, round(a / v, 4) if v else "", round(g, 4), f,
+                        round(e.fear_memory, 4), round(e.weight, 3)] +
+                       [round(x, 3) if x != "" else "" for x in iso])
+        return buf.getvalue()
+
+    def compute_isovists(self):
+        p = self.p
+        self.isovist_edges = isovist_by_edge(self.net, self.obstacles, float(p["isovist_radius"]),
+                                             float(p["isovist_spacing"]), int(p["isovist_rays"]))
+        return self.isovist_edges
+
+    def isovist_comparison(self, min_cycles=30):
+        """Spearman: widoczność odcinka vs stres na nim (odcinki odwiedzone co najmniej min_cycles cykli)."""
+        if self.isovist_edges is None:
+            self.compute_isovists()
+        rows = [(self.isovist_edges[i], st) for i, st in enumerate(self.edge_stats) if st[0] >= min_cycles]
+        area = [r[0][0] for r in rows]
+        blocked = [r[0][2] for r in rows]
+        adr = [r[1][1] / r[1][0] for r in rows]
+        vig = [r[1][2] / r[1][0] for r in rows]
+        fear = [r[1][3] / r[1][0] for r in rows]
+        return {
+            "n_edges": len(rows),
+            "rho_area_adrenaline": spearman(area, adr),
+            "rho_area_vigilance": spearman(area, vig),
+            "rho_area_fear": spearman(area, fear),
+            "rho_blocked_adrenaline": spearman(blocked, adr),
+            "rho_blocked_vigilance": spearman(blocked, vig),
+            "rho_blocked_fear": spearman(blocked, fear),
+        }
+
     def metrics(self):
         ph = self.phantoms[0] if self.phantoms else None
         fear = [e.fear_memory for e in self.net.edges]
+        stress = [st[1] / st[0] for st in self.edge_stats if st[0] >= 30]
         return {
             "cycle": self.cycle,
             "adrenaline": ph.adrenaline if ph else 0.0,
@@ -975,6 +1435,10 @@ class Model:
             "fear_markers": len(self.fears),
             "feared_edges": sum(1 for f in fear if f > 0.01),
             "max_fear_memory": max(fear) if fear else 0.0,
+            "n_bushes": len(self.obstacles.polygons),
+            "bush_area": round(sum(ring_area(r[0]) for r in self.obstacles.polygons), 1),
+            # rozkład stresu w przestrzeni: odchylenie standardowe średniej adrenaliny między odcinkami
+            "edge_stress_sd": _sd(stress),
         }
 
     # --- dane do przeglądarki ---
@@ -992,6 +1456,7 @@ class Model:
             "n_edges": len(self.net.edges), "n_nodes": len(self.net.nodes),
             "n_components": self.net.n_components(), "length": r(self.net.total_len),
             "source": self.source,
+            "planting": self.planting_info,
         })
 
     def snapshot_json(self):
@@ -1004,6 +1469,7 @@ class Model:
             "zones": [p["intimate"], p["personal"], p["social"], p["public"]],
             "fears": [[r(f[0][0]), r(f[0][1]), f[1]] for f in self.fears],
             "fear_memory": [round(e.fear_memory, 3) for e in self.net.edges],
+            "edge_stress": [round(st[1] / st[0], 3) if st[0] else None for st in self.edge_stats],
             "metrics": self.metrics(),
         })
 
@@ -1059,16 +1525,30 @@ def load_files(roads_path, obstacles_path=None):
 
 
 # ---------------------------------------------------------------------------
-# Batch: przegląd aversion_strength (i innych parametrów)
+# Eksperymenty: przegląd parametrów, eksperyment nasadzeń, analiza wrażliwości
 # ---------------------------------------------------------------------------
 
-BATCH_HEADER = ["run", "seed", "aversion_strength", "bot_nb", "phantom_nb", "cycles",
-                "total_adrenaline", "total_cortisol", "total_vigilance",
-                "fear_events", "fear_markers", "feared_edges", "max_fear_memory"]
+OUTPUTS = ["total_adrenaline", "total_cortisol", "total_vigilance", "fear_events", "fear_markers",
+           "feared_edges", "max_fear_memory", "edge_stress_sd", "n_bushes", "bush_area"]
+
+# parametry analizy wrażliwości: (dolna, górna granica dla LHS); OAT zmienia wartość bazową o ±delta.
+# Dla współczynników wygaszania zaburzana jest szybkość wygaszania 1 - c, a nie samo c.
+SENS_PARAMS = {
+    "adrenaline_threshold": (8.0, 15.0),
+    "adrenaline_cooldown": (0.98, 0.995),
+    "cortisol_cooldown": (0.998, 0.9995),
+    "cortisol_gain": (0.1, 0.3),
+    "hall_multiplier": (3.0, 5.0),
+    "aversion_strength": (0.0, 10.0),
+    "fear_deposit": (0.5, 2.0),
+    "fear_decay": (0.995, 0.9999),
+    "bot_nb": (40, 120),
+}
+RATE_PARAMS = {"adrenaline_cooldown", "cortisol_cooldown", "fear_decay"}
 
 
 def batch_plan(sweep, repeat, base_seed):
-    """sweep: {parametr: [wartości]} -> lista (params, seed); iloczyn kartezjański × powtórzenia."""
+    """sweep: {parametr: [wartości]} -> lista (nadpisania, seed, etykieta); iloczyn kartezjański × powtórzenia."""
     keys = list(sweep)
     combos = [{}]
     for k in keys:
@@ -1077,34 +1557,133 @@ def batch_plan(sweep, repeat, base_seed):
     for c in combos:
         for r in range(repeat):
             # ten sam seed dla danego powtórzenia we wszystkich wariantach (wspólne liczby losowe)
-            plan.append((c, base_seed + r))
+            plan.append((c, base_seed + r, ""))
     return plan
 
 
-def batch_row(i, model):
+def planting_plan(distances=(1.0, 4.0, 8.0, 12.0), shares=(0.0, 0.5, 1.0), repeat=5, base_seed=1, planting_seeds=1):
+    """Eksperyment nasadzeń: stała powierzchnia krzewów, zmienny odstęp od skrzyżowań i udział w narożnikach.
+
+    planting_seeds > 1 powtarza każdy wariant na kilku losowaniach nasadzeń (seed nasadzeń = seed przebiegu).
+    """
+    sweep = {"bush_junction_distance": list(distances), "bush_junction_share": list(shares)}
+    plan = []
+    for c, seed, _l in batch_plan(sweep, repeat, base_seed):
+        c = dict(c, planting="controlled")
+        if planting_seeds > 1:
+            c["planting_seed"] = 1 + (seed - base_seed) % planting_seeds
+        plan.append((c, seed, ""))
+    return plan
+
+
+def _perturb(name, base, delta, sign):
+    if name in RATE_PARAMS:
+        return 1.0 - (1.0 - base) * (1.0 + sign * delta)
+    v = base * (1.0 + sign * delta)
+    return int(round(v)) if isinstance(DEFAULTS[name], int) else v
+
+
+def oat_plan(names=None, delta=0.1, repeat=5, base_seed=1, params=None):
+    """Wrażliwość lokalna (one-at-a-time): baza + każdy parametr ±delta, te same seedy."""
+    names = list(names or SENS_PARAMS)
+    base = resolved_params(params)
+    plan = []
+    for r in range(repeat):
+        plan.append(({}, base_seed + r, "base"))
+    for n in names:
+        for sign, tag in ((-1, "-"), (1, "+")):
+            v = _perturb(n, base[n], delta, sign)
+            for r in range(repeat):
+                plan.append(({n: v}, base_seed + r, n + tag))
+    return plan
+
+
+def lhs_plan(names=None, n=40, base_seed=1):
+    """Wrażliwość globalna: próbkowanie hipersześcianu łacińskiego w zakresach SENS_PARAMS."""
+    names = list(names or SENS_PARAMS)
+    rng = random.Random(base_seed * 7919 + 17)
+    cols = {}
+    for name in names:
+        lo, hi = SENS_PARAMS[name]
+        strata = [(k + rng.random()) / n for k in range(n)]
+        rng.shuffle(strata)
+        vals = [lo + (hi - lo) * u for u in strata]
+        if isinstance(DEFAULTS[name], int):
+            vals = [int(round(v)) for v in vals]
+        cols[name] = vals
+    return [({name: cols[name][i] for name in names}, base_seed + i, "lhs") for i in range(n)]
+
+
+def make_model(overrides, seed, cycles, params=None, inputs=None):
+    pp = dict(params or {})
+    pp.update(overrides)
+    pp["end_cycle"] = cycles
+    if inputs:
+        return Model(pp, seed=seed, roads=inputs[0], obstacles=inputs[1], boundary=inputs[2])
+    return Model(pp, seed=seed)
+
+
+def result_row(i, model, overrides, label="", isovist=False):
     m = model.metrics()
-    p = model.p
-    return [i, model.seed, p["aversion_strength"], p["bot_nb"], p["phantom_nb"], model.cycle,
-            round(m["total_adrenaline"], 4), round(m["total_cortisol"], 4), round(m["total_vigilance"], 4),
-            m["fear_events"], m["fear_markers"], m["feared_edges"], round(m["max_fear_memory"], 4)]
+    row = {"run": i, "seed": model.seed, "label": label, "cycles": model.cycle}
+    for k in sorted(overrides):
+        row[k] = overrides[k]
+    for k in OUTPUTS:
+        v = m[k]
+        row[k] = round(v, 4) if isinstance(v, float) else v
+    if model.planting_info:
+        row["junction_share_real"] = model.planting_info["junction_share"]
+        row["setback_real"] = model.planting_info.get("setback_mean")
+    if isovist:
+        cmp_ = model.isovist_comparison()
+        L = [e.length for e in model.net.edges]
+        row["isovist_area_mean"] = round(sum(a[0] * l for a, l in zip(model.isovist_edges, L)) / sum(L), 2)
+        row["isovist_blocked_mean"] = round(sum(a[2] * l for a, l in zip(model.isovist_edges, L)) / sum(L), 4)
+        for k, v in cmp_.items():
+            row[k] = round(v, 4) if isinstance(v, float) and v == v else (v if not isinstance(v, float) else "")
+    return row
+
+
+def _run_one(job):
+    i, overrides, seed, label, cycles, params, inputs, isovist = job
+    model = make_model(overrides, seed, cycles, params, inputs).run()
+    return result_row(i, model, overrides, label, isovist)
+
+
+def run_plan(plan, cycles=3000, params=None, inputs=None, progress=None, jobs=1, isovist=False):
+    """Uruchamia plan; jobs > 1 = procesy równoległe (tylko CPython, nie w przeglądarce)."""
+    work = [(i, o, s, l, cycles, params, inputs, isovist) for i, (o, s, l) in enumerate(plan)]
+    rows = []
+    if jobs and jobs > 1:
+        import multiprocessing as mp
+        with mp.Pool(jobs) as pool:
+            for k, row in enumerate(pool.imap(_run_one, work, chunksize=1)):
+                rows.append(row)
+                if progress:
+                    progress(k + 1, len(plan))
+        return rows
+    for k, job in enumerate(work):
+        rows.append(_run_one(job))
+        if progress:
+            progress(k + 1, len(plan))
+    return rows
 
 
 def run_batch(sweep, repeat=3, cycles=3000, base_seed=1, params=None, inputs=None, progress=None):
-    rows = []
-    plan = batch_plan(sweep, repeat, base_seed)
-    for i, (combo, seed) in enumerate(plan):
-        pp = dict(params or {})
-        pp.update(combo)
-        pp["end_cycle"] = cycles
-        if inputs:
-            model = Model(pp, seed=seed, roads=inputs[0], obstacles=inputs[1], boundary=inputs[2])
-        else:
-            model = Model(pp, seed=seed)
-        model.run()
-        rows.append(batch_row(i, model))
-        if progress:
-            progress(i + 1, len(plan))
-    return rows
+    return run_plan(batch_plan(sweep, repeat, base_seed), cycles, params, inputs, progress)
+
+
+def dict_rows_csv(rows):
+    keys = []
+    for r in rows:
+        for k in r:
+            if k not in keys:
+                keys.append(k)
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=keys)
+    w.writeheader()
+    w.writerows(rows)
+    return buf.getvalue()
 
 
 def rows_csv(header, rows):
@@ -1113,6 +1692,65 @@ def rows_csv(header, rows):
     w.writerow(header)
     w.writerows(rows)
     return buf.getvalue()
+
+
+def group_summary(rows, keys, outputs=None):
+    """Średnia ± SD wyników w grupach o tych samych wartościach keys."""
+    outputs = outputs or ["total_adrenaline", "total_cortisol", "total_vigilance", "fear_events", "edge_stress_sd"]
+    groups = {}
+    for r in rows:
+        groups.setdefault(tuple(r.get(k) for k in keys), []).append(r)
+    out = []
+    for g, rs in groups.items():
+        row = dict(zip(keys, g))
+        row["n"] = len(rs)
+        for o in outputs:
+            vals = [r[o] for r in rs]
+            row[o + "_mean"] = round(sum(vals) / len(vals), 4)
+            row[o + "_sd"] = round(_sd(vals), 4)
+        out.append(row)
+    return out
+
+
+def oat_analysis(rows, params=None, outputs=None):
+    """Elastyczności: (ΔY / Y_baza) / (ΔX / X_baza) z różnicy centralnej (średnie po powtórzeniach)."""
+    outputs = outputs or ["total_adrenaline", "total_cortisol", "total_vigilance", "fear_events"]
+    base = resolved_params(params)
+    by = {}
+    for r in rows:
+        by.setdefault(r["label"], []).append(r)
+    mean = lambda rs, o: sum(r[o] for r in rs) / len(rs)
+    out = []
+    names = [l[:-1] for l in by if l.endswith("+")]
+    for n in names:
+        lo, hi = by.get(n + "-"), by.get(n + "+")
+        if not lo or not hi or "base" not in by:
+            continue
+        x0 = (1.0 - base[n]) if n in RATE_PARAMS else base[n]
+        xl = (1.0 - lo[0][n]) if n in RATE_PARAMS else lo[0][n]
+        xh = (1.0 - hi[0][n]) if n in RATE_PARAMS else hi[0][n]
+        row = {"parameter": n + (" (1 - c)" if n in RATE_PARAMS else ""), "base": round(x0, 6),
+               "low": round(xl, 6), "high": round(xh, 6)}
+        for o in outputs:
+            y0 = mean(by["base"], o)
+            dy = mean(hi, o) - mean(lo, o)
+            dx = xh - xl
+            row[o] = round((dy / y0) / (dx / x0), 3) if y0 and dx and x0 else float("nan")
+        out.append(row)
+    return out
+
+
+def lhs_analysis(rows, names=None, outputs=None):
+    """Korelacja rang Spearmana parametr–wynik w próbie LHS."""
+    names = list(names or [k for k in SENS_PARAMS if rows and k in rows[0]])
+    outputs = outputs or ["total_adrenaline", "total_cortisol", "total_vigilance", "fear_events"]
+    out = []
+    for n in names:
+        row = {"parameter": n}
+        for o in outputs:
+            row[o] = round(spearman([r[n] for r in rows], [r[o] for r in rows]), 3)
+        out.append(row)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1335,7 +1973,7 @@ def test_query_mentions_park_and_city():
 
 
 def test_bots_share_weighted_graph():
-    m = _tiny_model({"bot_nb": 3, "aversion_strength": 5.0})
+    m = _tiny_model({"bot_nb": 3, "aversion_strength": 5.0, "bot_graph": "weighted"})
     m.net.edges[1].fear_memory = 1.0
     v = m.graph_version
     m.rebuild_graph()
@@ -1355,6 +1993,166 @@ def test_full_default_run_smoke():
     assert m.cycle == 400
     assert m.phantoms[0].total_cortisol > 0
     assert time.time() - t < 60
+
+
+def test_individual_memory_equals_shared_for_one_phantom():
+    a = Model({"bot_nb": 30, "end_cycle": 1500}, seed=3).run().metrics()
+    b = Model({"bot_nb": 30, "end_cycle": 1500, "fear_scope": "individual"}, seed=3).run().metrics()
+    assert a == b
+
+
+def test_individual_memory_is_separate():
+    m = _tiny_model({"phantom_nb": 2, "fear_scope": "individual", "aversion_strength": 5.0})
+    p0, p1 = m.phantoms
+    p0.fear[1] = 2.0
+    m.net.edges[1].fear_memory = 2.0
+    m.rebuild_graph()
+    assert abs(p0.weights[1] - 100.0 * 11.0) < 1e-9
+    assert p1.weights[1] == 100.0
+    assert p0.route_weights(m) is p0.weights
+
+
+def test_plain_bot_graph_ignores_fear():
+    m = _tiny_model({"bot_nb": 1, "bot_graph": "plain", "aversion_strength": 5.0})
+    m.net.edges[1].fear_memory = 10.0
+    m.rebuild_graph()
+    bot = m.bots[0]
+    assert bot.route_weights(m) == m.net.lengths
+    r = m.net.route((m.net.edges[0], 90.0), (m.net.edges[3], 99.0), bot.route_weights(m))
+    assert any(leg[0] is m.net.edges[1] for leg in r)   # krótsza droga przez "straszny" odcinek
+    m2 = _tiny_model({"bot_nb": 1, "aversion_strength": 5.0, "bot_graph": "weighted"})
+    assert m2.bots[0].route_weights(m2) is None           # weighted = jak w GAMA: wspólny graf ważony
+    m3 = _tiny_model({"bot_nb": 1, "aversion_strength": 5.0})
+    assert m3.bots[0].route_weights(m3) == m3.net.lengths  # domyślnie boty nie znają strachu phantoma
+
+
+def test_edge_stats_accumulate():
+    m = Model({"bot_nb": 10, "end_cycle": 200, "phantom_nb": 2}, seed=2).run()
+    assert sum(st[0] for st in m.edge_stats) == 200 * 2
+    ev = sum(st[3] for st in m.edge_stats)
+    assert ev == sum(ph.fear_events for ph in m.phantoms)
+    assert m.edge_csv().splitlines()[0].startswith("edge_id,length_m,phantom_cycles")
+
+
+def test_controlled_planting_constant_area():
+    roads, _o, _b = generate_park(2)
+    areas = []
+    for d in (1.0, 6.0, 12.0):
+        for share in (0.0, 0.5, 1.0):
+            p = resolved_params({"planting": "controlled", "bush_junction_distance": d, "bush_junction_share": share})
+            obs, info = plant_bushes(roads, p)
+            areas.append(info["area"])
+            r, off = p["bush_radius"], p["bush_path_offset"]
+            idx = SegIndex(roads)
+            js = [n for n, _a in junctions(roads)]
+            for rings in obs:
+                ring = rings[0]
+                c = (sum(q[0] for q in ring[:-1]) / (len(ring) - 1), sum(q[1] for q in ring[:-1]) / (len(ring) - 1))
+                assert idx.nearest(c) >= r + off - 1e-6
+                dj = min(dist(c, q) for q in js)
+                # narożny: krawędź >= d od węzła; przy ścieżce: poza strefą skrzyżowania
+                assert dj - r >= min(d, p["junction_zone"]) - 1e-6, (d, dj)
+            if share == 0.0:
+                assert info["n_junction"] == 0
+    one = ring_area(circle_ring((0, 0), 4.0))
+    assert max(areas) - min(areas) <= one + 1e-6, areas
+    assert abs(areas[0] - 2500.0) <= one
+
+
+def test_band_planting_clearance_and_area():
+    roads, _o, _b = generate_park(3)
+    idx = SegIndex(roads)
+    for d in (0.0, 10.0, 20.0):
+        p = resolved_params({"planting": "controlled", "bush_form": "band", "bush_junction_distance": d,
+                             "bush_junction_share": 1.0, "bush_area_total": 1500.0})
+        obs, info = plant_bushes(roads, p)
+        assert info["n_bushes"] == info["n_target"] == 62
+        assert abs(info["area"] - 62 * 24.0) < 1e-6
+        for rings in obs:
+            for q in rings[0]:
+                assert idx.nearest(q) >= p["bush_path_offset"] - 1e-6
+        # faktyczny odstęp pierwszych odcinków od węzła nie mniejszy niż zadany (min. off + w)
+        assert info["setback_mean"] >= max(d, 3.0) - 1e-6
+    # pasy się nie nakładają: środki odcinków pasów oddalone o co najmniej szerokość
+    cs = [(sum(q[0] for q in r[0][:-1]) / 4, sum(q[1] for q in r[0][:-1]) / 4) for r in obs]
+    o = Obstacles(obs)
+    for c in cs:
+        assert len(o.containing(c)) == 1
+
+
+def test_cortisol_gain_parameter():
+    m = _tiny_model({"bot_nb": 0, "cortisol_gain": 0.4})
+    ph = m.phantoms[0]
+    ph.update_psychophysiology(m)
+    c = 0.5 * 0.999
+    assert abs(ph.cortisol - (c + 0.4 * 0.5 / (c + 1) ** 2)) < 1e-12
+
+
+def test_parallel_plan_matches_serial():
+    if sys.platform == "emscripten":      # w przeglądarce (Pyodide) nie ma procesów
+        return
+    plan = batch_plan({"bot_nb": [5, 10]}, 1, 1)
+    a = run_plan(plan, cycles=80)
+    b = run_plan(plan, cycles=80, jobs=2)
+    assert a == b
+
+
+def test_isovist_row_columns():
+    rows = run_plan([({"planting": "controlled"}, 1, "")], cycles=300, isovist=True)
+    assert rows[0]["isovist_area_mean"] > 0 and "rho_area_adrenaline" in rows[0]
+
+
+def test_isovist_open_and_blocked():
+    empty = Obstacles([])
+    area, mean_ray, blocked = isovist((0.0, 0.0), empty, 10.0, 72)
+    assert abs(area - math.pi * 100) / (math.pi * 100) < 0.01 and blocked == 0.0 and mean_ray == 10.0
+    wall = Obstacles([[[(2.0, -50.0), (3.0, -50.0), (3.0, 50.0), (2.0, 50.0), (2.0, -50.0)]]])
+    area2, _m, blocked2 = isovist((0.0, 0.0), wall, 10.0, 72)
+    # ściana x = 2 zasłania promienie o |kąt| < acos(0.2) ≈ 78.5° (ok. 44%)
+    assert 0.4 < blocked2 < 0.47 and area2 < 0.65 * area
+
+
+def test_spearman():
+    assert abs(spearman([1, 2, 3, 4], [10, 20, 30, 40]) - 1.0) < 1e-12
+    assert abs(spearman([1, 2, 3, 4], [4, 3, 2, 1]) + 1.0) < 1e-12
+    assert abs(spearman([1, 2, 3, 4, 5], [2, 1, 4, 3, 5]) - 0.8) < 1e-12
+
+
+def test_oat_plan_and_elasticity():
+    plan = oat_plan(["hall_multiplier", "adrenaline_cooldown"], 0.1, 2, 1)
+    labels = [l for _o, _s, l in plan]
+    assert labels.count("base") == 2 and labels.count("hall_multiplier+") == 2
+    hm = [o["hall_multiplier"] for o, _s, l in plan if l == "hall_multiplier-"]
+    assert abs(hm[0] - 3.6) < 1e-9
+    ac = [o["adrenaline_cooldown"] for o, _s, l in plan if l == "adrenaline_cooldown+"]
+    assert abs((1 - ac[0]) - 0.011) < 1e-12      # zaburzana szybkość wygaszania
+    # sztuczne wyniki: Y = 100 * hall_multiplier -> elastyczność 1
+    rows = []
+    for o, _s, l in plan:
+        hmv = o.get("hall_multiplier", 4.0)
+        rows.append(dict(o, label=l, total_adrenaline=100 * hmv, total_cortisol=1.0,
+                         total_vigilance=1.0, fear_events=1.0))
+    an = {r["parameter"]: r for r in oat_analysis(rows)}
+    assert abs(an["hall_multiplier"]["total_adrenaline"] - 1.0) < 1e-9
+    assert an["hall_multiplier"]["total_cortisol"] == 0.0
+
+
+def test_lhs_plan_stratified():
+    plan = lhs_plan(["adrenaline_threshold", "bot_nb"], 10, 1)
+    vals = sorted(o["adrenaline_threshold"] for o, _s, _l in plan)
+    for k, v in enumerate(vals):
+        assert 8.0 + 0.7 * k <= v <= 8.0 + 0.7 * (k + 1)
+    assert all(isinstance(o["bot_nb"], int) for o, _s, _l in plan)
+    assert len({s for _o, s, _l in plan}) == 10
+
+
+def test_run_plan_rows():
+    rows = run_plan(planting_plan((2.0,), (0.0, 1.0), 1, 1), cycles=100)
+    assert len(rows) == 2 and rows[0]["bush_junction_share"] == 0.0 and rows[1]["planting"] == "controlled"
+    assert abs(rows[0]["bush_area"] - rows[1]["bush_area"]) <= ring_area(circle_ring((0, 0), 4.0)) + 1e-6
+    assert "total_adrenaline" in dict_rows_csv(rows).splitlines()[0]
+    summ = group_summary(rows, ["bush_junction_share"])
+    assert len(summ) == 2 and summ[0]["n"] == 1
 
 
 TESTS = [(name, fn) for name, fn in sorted(globals().items()) if name.startswith("test_") and callable(fn)]
@@ -1386,12 +2184,41 @@ def _parse_list(s, cast=float):
     return [cast(x) for x in s.split(",") if x.strip()]
 
 
+def _cast(k, v):
+    d = DEFAULTS.get(k)
+    if k in CHOICES:
+        return v
+    if isinstance(d, bool):
+        return v.lower() in ("1", "true", "yes", "tak")
+    if isinstance(d, int):
+        return int(float(v))
+    return float(v)
+
+
+def _write(path, text):
+    if path:
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            f.write(text)
+    else:
+        print(text)
+
+
+def _table(rows):
+    if not rows:
+        return ""
+    keys = list(rows[0])
+    return "\n".join(["\t".join(keys)] + ["\t".join(str(r.get(k, "")) for k in keys) for r in rows])
+
+
 def main(argv):
     import argparse
     ap = argparse.ArgumentParser(description="PSM – Proxemic Stress Model z awersją do tras (port GAMA).")
     ap.add_argument("--test", action="store_true", help="uruchom testy")
     ap.add_argument("--run", action="store_true", help="pojedynczy przebieg")
-    ap.add_argument("--batch", action="store_true", help="przegląd aversion_strength × bot_nb")
+    ap.add_argument("--batch", action="store_true", help="przegląd parametrów (--sweep, --aversion, --bots)")
+    ap.add_argument("--planting-experiment", action="store_true",
+                    help="nasadzenia przy stałej powierzchni: odstęp od skrzyżowań × udział w narożnikach")
+    ap.add_argument("--sensitivity", choices=["oat", "lhs"], help="analiza wrażliwości stałych modelu")
     ap.add_argument("--fetch-osm", metavar="NAZWA", help="pobierz park z OpenStreetMap (Overpass) i zapisz GeoJSON")
     ap.add_argument("--city", default="Wrocław")
     ap.add_argument("--out", default="park.geojson")
@@ -1399,19 +2226,29 @@ def main(argv):
     ap.add_argument("--obstacles", help="plik przeszkód: .shp albo .geojson")
     ap.add_argument("--cycles", type=int, default=None)
     ap.add_argument("--seed", type=int, default=1)
-    ap.add_argument("--aversion", default="0,5", help="wartości aversion_strength (batch), np. 0,2.5,5")
-    ap.add_argument("--bots", default=None, help="wartości bot_nb (batch), np. 40,80")
+    ap.add_argument("--sweep", action="append", default=[], metavar="PARAM=W1,W2",
+                    help="przegląd dowolnego parametru (można podać kilka razy)")
+    ap.add_argument("--aversion", default=None, help="skrót: --sweep aversion_strength=...")
+    ap.add_argument("--bots", default=None, help="skrót: --sweep bot_nb=...")
+    ap.add_argument("--distances", default="1,4,8,12", help="eksperyment nasadzeń: bush_junction_distance (m)")
+    ap.add_argument("--shares", default="0,0.5,1", help="eksperyment nasadzeń: bush_junction_share")
+    ap.add_argument("--planting-seeds", type=int, default=1, help="ile losowań nasadzeń na wariant")
+    ap.add_argument("--params", default=None, help="parametry wrażliwości, np. adrenaline_threshold,hall_multiplier")
+    ap.add_argument("--delta", type=float, default=0.1, help="OAT: względna zmiana parametru")
+    ap.add_argument("--samples", type=int, default=40, help="LHS: liczba próbek")
     ap.add_argument("--repeat", type=int, default=3)
+    ap.add_argument("--isovist", action="store_true", help="policz izowisty i korelację ze stresem (--run i eksperymenty)")
+    ap.add_argument("--jobs", type=int, default=1, help="liczba procesów równoległych w eksperymentach")
     ap.add_argument("--set", action="append", default=[], metavar="KLUCZ=WARTOŚĆ")
-    ap.add_argument("--csv", default=None, help="plik wynikowy CSV")
+    ap.add_argument("--csv", default=None, help="plik wynikowy CSV (wiersz = przebieg)")
+    ap.add_argument("--summary", default=None, help="plik CSV z podsumowaniem (średnie, elastyczności, korelacje)")
+    ap.add_argument("--edges", default=None, help="--run: mapa stresu i widoczności na odcinkach (CSV)")
     a = ap.parse_args(argv)
 
     params = {}
     for kv in a.set:
         k, v = kv.split("=", 1)
-        d = DEFAULTS.get(k)
-        params[k] = (v.lower() in ("1", "true", "yes")) if isinstance(d, bool) else \
-            int(v) if isinstance(d, int) else float(v) if isinstance(d, float) or d is None else v
+        params[k] = _cast(k, v)
 
     if a.test:
         res = run_tests()
@@ -1432,6 +2269,7 @@ def main(argv):
         return 0
 
     inputs = load_files(a.roads, a.obstacles) if a.roads else None
+    prog = lambda i, n: print("\r%d/%d" % (i, n), end="", file=sys.stderr)
 
     if a.run:
         if a.cycles:
@@ -1443,25 +2281,55 @@ def main(argv):
         m.step()
         print("przebieg: %d cykli w %.1f s, sieć: %d krawędzi, %d składowych" %
               (m.cycle, time.time() - t, len(m.net.edges), m.net.n_components()))
+        if m.planting_info:
+            print("nasadzenia:", json.dumps(m.planting_info))
         print(json.dumps(m.metrics(), indent=1))
+        if a.isovist:
+            t = time.time()
+            cmp_ = m.isovist_comparison()
+            print("izowisty vs stres (Spearman, %.1f s):" % (time.time() - t),
+                  json.dumps({k: round(v, 3) for k, v in cmp_.items()}))
+        if a.edges:
+            _write(a.edges, m.edge_csv())
         if a.csv:
-            with open(a.csv, "w", newline="", encoding="utf-8") as f:
-                f.write(m.summary_csv())
+            _write(a.csv, m.summary_csv())
         return 0
 
-    if a.batch:
-        sweep = {"aversion_strength": _parse_list(a.aversion)}
-        if a.bots:
-            sweep["bot_nb"] = _parse_list(a.bots, int)
-        prog = lambda i, n: print("\r%d/%d" % (i, n), end="", file=sys.stderr)
-        rows = run_batch(sweep, a.repeat, a.cycles or 3000, a.seed, params, inputs, prog)
-        print(file=sys.stderr)
-        text = rows_csv(BATCH_HEADER, rows)
-        if a.csv:
-            with open(a.csv, "w", newline="", encoding="utf-8") as f:
-                f.write(text)
+    cycles = a.cycles or 3000
+    if a.batch or a.planting_experiment or a.sensitivity:
+        if a.batch:
+            sweep = {}
+            for kv in a.sweep:
+                k, v = kv.split("=", 1)
+                sweep[k] = [_cast(k, x) for x in v.split(",") if x.strip()]
+            if a.aversion:
+                sweep["aversion_strength"] = _parse_list(a.aversion)
+            if a.bots:
+                sweep["bot_nb"] = _parse_list(a.bots, int)
+            if not sweep:
+                sweep = {"aversion_strength": [0.0, 5.0]}
+            plan = batch_plan(sweep, a.repeat, a.seed)
+            keys = list(sweep)
+        elif a.planting_experiment:
+            plan = planting_plan(_parse_list(a.distances), _parse_list(a.shares), a.repeat, a.seed, a.planting_seeds)
+            keys = ["bush_junction_distance", "bush_junction_share"]
+        elif a.sensitivity == "oat":
+            plan = oat_plan(a.params.split(",") if a.params else None, a.delta, a.repeat, a.seed, params)
         else:
-            print(text)
+            plan = lhs_plan(a.params.split(",") if a.params else None, a.samples, a.seed)
+        rows = run_plan(plan, cycles, params, inputs, prog, a.jobs, a.isovist)
+        print(file=sys.stderr)
+        if a.csv:
+            _write(a.csv, dict_rows_csv(rows))
+        if a.sensitivity == "oat":
+            summ = oat_analysis(rows, params)
+        elif a.sensitivity == "lhs":
+            summ = lhs_analysis(rows, a.params.split(",") if a.params else None)
+        else:
+            summ = group_summary(rows, keys)
+        print(_table(summ))
+        if a.summary:
+            _write(a.summary, dict_rows_csv(summ))
         return 0
 
     ap.print_help()
