@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PSM w przeglądarce</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  color-scheme: light;
+  --ground: #f2f4ee;
+  --panel: #fbfcf8;
+  --ink: #1c2520;
+  --muted: #5d6a61;
+  --line: #d5dbd0;
+  --park: #3f6b4a;
+  --bush: #7fae6a;
+  --path: #3a3a36;
+  --bot: #9a5b34;
+  --phantom: #1f6fb2;
+  --accent: #b5731a;
+  --bad: #b3372b;
+  --good: #2f7d46;
+  --focus: #1f6fb2;
+  --map-bg: #e6ecdf;
+  --font-body: "IBM Plex Sans", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-label: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground: #121714; --panel: #19201b; --ink: #e2e8e0; --muted: #98a59b; --line: #2d3830;
+    --park: #7fb08a; --bush: #3f6a45; --path: #c9c6bd; --bot: #d49a6a; --phantom: #6fb1ea;
+    --accent: #e0a24a; --bad: #ef7a6c; --good: #6cc38a; --focus: #6fb1ea; --map-bg: #1b241d;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #121714; --panel: #19201b; --ink: #e2e8e0; --muted: #98a59b; --line: #2d3830;
+  --park: #7fb08a; --bush: #3f6a45; --path: #c9c6bd; --bot: #d49a6a; --phantom: #6fb1ea;
+  --accent: #e0a24a; --bad: #ef7a6c; --good: #6cc38a; --focus: #6fb1ea; --map-bg: #1b241d;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--ground); color: var(--ink); font: 14px/1.5 var(--font-body);
+  padding: env(safe-area-inset-top, 0px) 16px env(safe-area-inset-bottom, 0px);
+}
+h1, h2, h3 { font-family: var(--font-label); font-weight: 600; text-wrap: balance; margin: 0; }
+h1 { font-size: 22px; letter-spacing: .01em; }
+h2 { font-size: 16px; }
+h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+button, select, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+header.top {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px;
+  padding-block: 16px 12px; border-bottom: 1px solid var(--line);
+}
+header.top p { margin: 0; color: var(--muted); max-width: 72ch; }
+.status { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.status b { color: var(--ink); font-weight: 500; }
+
+nav.tabs { display: flex; gap: 4px; padding-block: 10px; flex-wrap: wrap; }
+nav.tabs button {
+  border: 1px solid var(--line); background: transparent; padding: 6px 14px; border-radius: 6px; cursor: pointer;
+  font-family: var(--font-label); font-weight: 500;
+}
+nav.tabs button[aria-selected="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+
+.layout { display: grid; grid-template-columns: 310px minmax(0, 1fr); gap: 16px; padding-block: 4px 32px; }
+@media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+aside.params { display: flex; flex-direction: column; gap: 8px; }
+.controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.btn { border: 1px solid var(--line); background: var(--panel); padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+.btn.primary { background: var(--park); border-color: var(--park); color: var(--ground); font-weight: 600; }
+.btn:disabled { opacity: .5; cursor: default; }
+details.cat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+details.cat > summary {
+  cursor: pointer; padding: 8px 12px; font-family: var(--font-label); font-weight: 600; font-size: 13px;
+  letter-spacing: .03em; list-style-position: inside;
+}
+.fields { display: grid; gap: 6px; padding: 4px 12px 12px; }
+.field { display: grid; grid-template-columns: minmax(0, 1fr) 96px; gap: 8px; align-items: center; }
+.field label { font-size: 12.5px; color: var(--muted); }
+.field input[type="number"], .field input[type="text"], .field select {
+  width: 100%; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--ground);
+  font-family: var(--font-mono); font-size: 12.5px;
+}
+.field input[type="checkbox"] { justify-self: start; width: 16px; height: 16px; accent-color: var(--park); }
+.field.stack { grid-template-columns: minmax(0, 1fr); }
+.field.wide { grid-template-columns: minmax(0, 1fr) 170px; }
+.field input[type="file"] { max-width: 100%; font-size: 12px; }
+.field.restart label::after { content: " ↻"; color: var(--accent); }
+.hint { font-size: 12px; color: var(--muted); margin: 0; }
+.source { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; }
+
+main { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.displays { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+@media (max-width: 1100px) { .displays { grid-template-columns: minmax(0, 1fr); } }
+figure.display { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; min-width: 0; }
+figure.display figcaption { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; align-items: baseline; }
+canvas.map { width: 100%; display: block; border-radius: 4px; background: var(--map-bg); }
+.chart-box { position: relative; height: 280px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
+.legend span::before {
+  content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px;
+  background: var(--c); vertical-align: 0;
+}
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 0; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+.stat dt { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-family: var(--font-label); }
+.stat dd { margin: 0; font-family: var(--font-mono); font-size: 15px; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: grid; gap: 10px; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-family: var(--font-label); font-weight: 600; color: var(--muted); }
+td.num, th.num { text-align: right; font-family: var(--font-mono); }
+.ok { color: var(--good); font-weight: 600; }
+.fail { color: var(--bad); font-weight: 600; }
+progress { width: 100%; height: 10px; accent-color: var(--park); }
+.msg { padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); }
+.msg.error { border-color: var(--bad); color: var(--bad); }
+.msg.warn { border-color: var(--accent); }
+.loading { position: fixed; inset: 0; display: grid; place-items: center; background: var(--ground); z-index: 10; padding: 16px; }
+.loading .box { display: grid; gap: 10px; max-width: 420px; }
+ul.plain { margin: 0; padding-left: 18px; }
+code { font-family: var(--font-mono); font-size: 12.5px; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+</head>
+<body>
+
+<div class="loading" id="loading">
+  <div class="box">
+    <h2>Ładowanie Pythona (Pyodide)…</h2>
+    <progress id="loadBar"></progress>
+    <p class="hint" id="loadMsg">Pierwsze uruchomienie pobiera ok. 10 MB, potem przeglądarka trzyma to w pamięci podręcznej.</p>
+    <div id="loadPick" hidden>
+      <p class="hint">Nie udało się wczytać <code>psm.py</code> obok strony (strona otwarta jako plik?). Wskaż plik ręcznie albo uruchom <code>python -m http.server</code> w katalogu <code>web/</code>.</p>
+      <input type="file" id="pySrcFile" accept=".py">
+    </div>
+  </div>
+</div>
+
+<header class="top">
+  <h1>PSM – stres proksemiczny i awersja do tras</h1>
+  <p>Port modelu <code>Hall_AC_aversion.gaml</code> do Pythona, uruchamiany w przeglądarce. Parametry z oznaczeniem ↻ działają po ponownej inicjalizacji.</p>
+  <div class="status" id="status">cykl <b id="stCycle">–</b> · park <b id="stNet">–</b></div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" aria-selected="true" data-tab="sim">Symulacja</button>
+  <button role="tab" aria-selected="false" data-tab="batch">Eksperyment batch</button>
+  <button role="tab" aria-selected="false" data-tab="tests">Testy</button>
+  <button role="tab" aria-selected="false" data-tab="about">O porcie</button>
+</nav>
+
+<!-- SYMULACJA -->
+<section data-panel="sim" class="layout">
+  <aside class="params">
+    <div class="controls">
+      <button class="btn primary" id="btnInit">Inicjalizuj</button>
+      <button class="btn" id="btnRun" disabled>Start</button>
+      <button class="btn" id="btnStep" disabled>Krok</button>
+    </div>
+    <div class="field"><label for="speed">Cykli na klatkę</label>
+      <input type="number" id="speed" min="1" max="1000" value="10"></div>
+    <div class="field"><label for="seed">Seed (puste = losowy)</label>
+      <input type="text" id="seed" placeholder="losowy"></div>
+
+    <div class="source">
+      <h3>Park</h3>
+      <div class="field wide"><label for="srcKind">Źródło ścieżek</label>
+        <select id="srcKind">
+          <option value="generated">park generowany</option>
+          <option value="osm">OpenStreetMap (Wrocław)</option>
+          <option value="files">własne pliki (.shp / .geojson)</option>
+        </select></div>
+      <div id="srcOsm" hidden>
+        <div class="field wide"><label for="osmPark">Park</label>
+          <select id="osmPark">
+            <option>Park Staszica</option>
+            <option>Park Szczytnicki</option>
+            <option>Park Południowy</option>
+            <option>Park Grabiszyński</option>
+            <option>Park Zachodni</option>
+            <option value="__custom">inna nazwa…</option>
+          </select></div>
+        <div class="field wide" id="osmCustomRow" hidden><label for="osmCustom">Nazwa w OSM</label>
+          <input type="text" id="osmCustom" placeholder="np. Park Tołpy"></div>
+        <div class="controls"><button class="btn" id="btnOsm">Pobierz z OSM</button>
+          <button class="btn" id="btnOsmSave" disabled>Zapisz GeoJSON</button></div>
+        <p class="hint" id="osmInfo">Ścieżki (highway=footway, path, …) w granicach parku; przeszkody: zarośla, żywopłoty, szpalery drzew i budynki.</p>
+      </div>
+      <div id="srcFiles" hidden>
+        <div class="field stack"><label for="roadsFile">Ścieżki (np. Staszica_SHP_sciezki_01.shp)</label>
+          <input type="file" id="roadsFile" accept=".shp,.geojson,.json"></div>
+        <div class="field stack"><label for="obsFile">Przeszkody (np. Staszica_SHP_krzaki_09.shp)</label>
+          <input type="file" id="obsFile" accept=".shp,.geojson,.json"></div>
+        <p class="hint">Z shapefile wystarczy plik <code>.shp</code>; współrzędne powinny być w metrach (np. EPSG:2180). GeoJSON w stopniach jest rzutowany automatycznie.</p>
+      </div>
+      <p class="hint" id="srcInfo">Losowy park z alejkami i krzewami; zmień „Seed parku”, żeby dostać inny układ.</p>
+    </div>
+
+    <div id="paramForm"></div>
+  </aside>
+
+  <main>
+    <div id="messages"></div>
+    <dl class="stats" id="stats"></dl>
+    <div class="displays">
+      <figure class="display">
+        <figcaption><h3>Park – ścieżki, krzewy, agenci</h3>
+          <span class="hint">czerwień ścieżki = pamięć strachu</span></figcaption>
+        <canvas class="map" id="map" width="900" height="700"></canvas>
+        <div class="legend" style="margin-top:6px">
+          <span style="--c: var(--phantom)">phantom (strefy publiczna i społeczna)</span>
+          <span style="--c: var(--bot)">boty</span>
+          <span style="--c: var(--bush)">przeszkody</span>
+          <span style="--c: #d03020">znacznik strachu</span>
+        </div>
+      </figure>
+      <figure class="display">
+        <figcaption><h3>Phantom 0 – psychofizjologia</h3></figcaption>
+        <div class="chart-box"><canvas id="chart"></canvas></div>
+        <div class="legend">
+          <span style="--c: #2f6fb2">adrenalina</span>
+          <span style="--c: #8a4fbf">kortyzol</span>
+          <span style="--c: var(--ink)">czujność</span>
+        </div>
+      </figure>
+    </div>
+    <div class="panel">
+      <h2>Pliki wynikowe</h2>
+      <p class="hint"><code>summary.csv</code> jak w GAMA (zapis w cyklu <code>end_cycle − 1</code>), szereg czasowy phantoma 0 oraz pamięć strachu na odcinkach.</p>
+      <div class="controls">
+        <button class="btn" id="dlSummary" disabled>summary.csv</button>
+        <button class="btn" id="dlSeries" disabled>timeseries.csv</button>
+        <button class="btn" id="dlFear" disabled>fear_edges.csv</button>
+      </div>
+    </div>
+  </main>
+</section>
+
+<!-- BATCH -->
+<section data-panel="batch" hidden>
+  <div class="panel">
+    <h2>Przegląd siły awersji</h2>
+    <p class="hint">Każda kombinacja jest liczona z tymi samymi seedami powtórzeń (wspólne liczby losowe), na parku wybranym w zakładce Symulacja i z jej parametrami. Pełny przebieg GAMA to 10 000 cykli.</p>
+    <div class="controls">
+      <div class="field wide"><label for="bAv">aversion_strength</label><input type="text" id="bAv" value="0, 2.5, 5, 10"></div>
+      <div class="field wide"><label for="bBots">bot_nb</label><input type="text" id="bBots" value="80"></div>
+      <div class="field"><label for="bRepeat">Powtórzenia</label><input type="number" id="bRepeat" min="1" value="3"></div>
+      <div class="field"><label for="bCycles">Cykle</label><input type="number" id="bCycles" min="1" value="10000"></div>
+      <div class="field"><label for="bSeed">Pierwszy seed</label><input type="number" id="bSeed" value="1"></div>
+      <button class="btn primary" id="bRun">Uruchom</button>
+      <button class="btn" id="bStop" disabled>Zatrzymaj</button>
+    </div>
+    <progress id="bProg" value="0" max="1"></progress>
+    <p class="hint mono" id="bProgTxt">—</p>
+    <div class="table-wrap" id="bSummary"></div>
+    <div class="table-wrap" id="bTable"></div>
+    <div class="controls"><button class="btn" id="bDl" disabled>batch_results.csv</button></div>
+  </div>
+</section>
+
+<!-- TESTY -->
+<section data-panel="tests" hidden>
+  <div class="panel">
+    <h2>Testy modelu</h2>
+    <div class="controls"><button class="btn primary" id="tRun">Uruchom testy</button><span class="hint" id="tSummary"></span></div>
+    <div class="table-wrap" id="tTable"></div>
+  </div>
+</section>
+
+<!-- O PORCIE -->
+<section data-panel="about" hidden>
+  <div class="panel" style="max-width: 78ch">
+    <h2>Co odwzorowuje ten port</h2>
+    <p>Plik <code>psm.py</code> zawiera model z <code>models/Hall_AC_aversion.gaml</code>: sieć ścieżek jako graf ważony długością × (1 + aversion_strength × fear_memory), boty i phantomy idące najkrótszą ważoną trasą do losowego punktu, strefy Halla (1,8 / 4,8 / 14,4 / 40 m przy mnożniku 4) zasłaniane przez przeszkody, czujność, adrenalinę i kortyzol phantoma, próg lęku 11,5, znaczniki strachu, odkładanie i zanikanie pamięci strachu na odcinkach oraz zapis <code>summary.csv</code>.</p>
+    <h3>Różnice względem GAMA</h3>
+    <ul class="plain">
+      <li>Inny generator liczb losowych: wyniki zgadzają się statystycznie, nie liczba w liczbę. Ten sam seed daje w tej wersji te same wyniki.</li>
+      <li><code>masked_by</code> jest liczone jako linia widoczności phantom → bot (GAMA buduje wielokąt widoczności z promieni).</li>
+      <li>Strach trafia na odcinek, na którym phantom stoi (w GAMA <code>road closest_to self</code>, czyli ten sam odcinek).</li>
+      <li>Przy niespójnej sieci agenci chodzą tylko po największej składowej (w GAMA agent bez trasy stałby w miejscu).</li>
+      <li>GeoJSON i OSM w stopniach są rzutowane lokalnie na metry (odwzorowanie równoodległościowe).</li>
+    </ul>
+    <h3>Park</h3>
+    <p>Park generowany to siatka alejek z łukami i pętlą obwodową, z krzewami w narożnikach skrzyżowań (ślepe narożniki) i wzdłuż alejek. Park z OpenStreetMap pobiera przeglądarka bezpośrednio z Overpass API. Oryginalne pliki <code>Staszica_SHP_*.shp</code> można wczytać jako własne pliki.</p>
+    <h3>Uruchamianie poza przeglądarką</h3>
+    <p><code>python psm.py --test</code>, <code>python psm.py --run --roads Staszica_SHP_sciezki_01.shp --obstacles Staszica_SHP_krzaki_09.shp</code>, <code>python psm.py --batch --aversion 0,2.5,5 --repeat 5</code>, <code>python psm.py --fetch-osm "Park Staszica" --out park.geojson</code>.</p>
+  </div>
+</section>
+
+<script>
+"use strict";
+let py = null, DEFAULTS = {}, TYPES = {}, GUI = [], RESTART = new Set();
+let running = false, hasModel = false, net = null, snap = null;
+let chart = null, histLen = 0;
+let osmJson = null, osmName = "";
+let batchStop = false, batchCsv = "";
+
+const $ = (id) => document.getElementById(id);
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+function showMsg(text, kind = "") {
+  const box = $("messages");
+  if (!text) { box.replaceChildren(); return; }
+  const div = document.createElement("div");
+  div.className = "msg " + kind;
+  div.textContent = text;
+  box.replaceChildren(div);
+}
+
+// ---------- ładowanie Pyodide + psm.py ----------
+async function boot() {
+  try {
+    $("loadMsg").textContent = "Pobieranie interpretera Pythona…";
+    py = await loadPyodide();
+  } catch (e) {
+    $("loadMsg").textContent = "Nie udało się pobrać Pyodide: " + e.message + ". Sprawdź połączenie z internetem.";
+    return;
+  }
+  let src = null;
+  try {
+    const r = await fetch("psm.py", { cache: "no-cache" });
+    if (r.ok) src = await r.text();
+  } catch (e) { /* file:// – wybór ręczny poniżej */ }
+  if (!src) {
+    $("loadPick").hidden = false;
+    $("loadBar").hidden = true;
+    $("pySrcFile").onchange = async (ev) => { await start(await ev.target.files[0].text()); };
+    return;
+  }
+  await start(src);
+}
+
+async function start(src) {
+  py.FS.writeFile("/home/pyodide/psm.py", src);
+  py.runPython(`
+import sys, json
+sys.path.insert(0, "/home/pyodide")
+import psm
+_M = None
+_INPUTS = None
+_HIST = 0
+
+def _init(params_json, seed, use_inputs):
+    global _M, _HIST
+    params = json.loads(params_json)
+    kw = {}
+    if use_inputs and _INPUTS:
+        kw = dict(roads=_INPUTS[0], obstacles=_INPUTS[1], boundary=_INPUTS[2])
+    _M = psm.Model(params, seed=None if seed == "" else int(seed), **kw)
+    _HIST = 0
+    return _M.network_json()
+
+def _advance(n):
+    global _HIST
+    for _ in range(int(n)):
+        if not _M.step():
+            break
+    h = _M.history_json(_HIST)
+    _HIST = len(_M.history)
+    return json.dumps({"snap": json.loads(_M.snapshot_json()), "hist": json.loads(h)})
+
+def _set_params(params_json):
+    params = json.loads(params_json)
+    _M.p = psm.resolved_params(params)
+
+def _load(roads_path, obs_path):
+    global _INPUTS
+    rd = open(roads_path, "rb").read() if roads_path else None
+    od = open(obs_path, "rb").read() if obs_path else None
+    _INPUTS = psm.load_inputs(rd, od, roads_path or "", obs_path or "")
+    return json.dumps({"roads": len(_INPUTS[0]), "obstacles": len(_INPUTS[1])})
+
+def _osm_geojson(path):
+    raw = json.loads(open(path, encoding="utf-8").read())
+    return json.dumps(psm.features_to_geojson(psm.osm_to_features(raw)))
+`);
+  DEFAULTS = JSON.parse(py.runPython("json.dumps(psm.DEFAULTS)"));
+  TYPES = JSON.parse(py.runPython("json.dumps({k: type(v).__name__ for k, v in psm.DEFAULTS.items()})"));
+  GUI = JSON.parse(py.runPython("json.dumps(psm.GUI_PARAMETERS)"));
+  RESTART = new Set(JSON.parse(py.runPython("json.dumps(sorted(psm.RESTART_KEYS))")));
+  buildForm();
+  $("loading").hidden = true;
+  await initModel();
+}
+
+// ---------- formularz parametrów ----------
+function buildForm() {
+  const box = $("paramForm");
+  box.replaceChildren();
+  GUI.forEach(([cat, items], ci) => {
+    const det = document.createElement("details");
+    det.className = "cat";
+    det.open = ci < 1 || cat === "Awersja do tras";
+    const sum = document.createElement("summary");
+    sum.textContent = cat;
+    det.append(sum);
+    const fields = document.createElement("div");
+    fields.className = "fields";
+    for (const [key, label] of items) {
+      const v = DEFAULTS[key];
+      const row = document.createElement("div");
+      row.className = "field" + (RESTART.has(key) ? " restart" : "");
+      const lab = document.createElement("label");
+      lab.textContent = label;
+      lab.htmlFor = "p_" + key;
+      const inp = document.createElement("input");
+      inp.id = "p_" + key;
+      inp.dataset.key = key;
+      if (typeof v === "boolean") { inp.type = "checkbox"; inp.checked = v; inp.dataset.kind = "bool"; }
+      else if (v === null) { inp.type = "number"; inp.step = "any"; inp.placeholder = "auto"; inp.dataset.kind = "opt"; }
+      else if (TYPES[key] === "int") {
+        inp.type = "number"; inp.step = "1"; inp.value = v; inp.dataset.kind = "int";
+      } else { inp.type = "number"; inp.step = "any"; inp.value = v; inp.dataset.kind = "float"; }
+      inp.addEventListener("change", onParamChange);
+      row.append(lab, inp);
+      fields.append(row);
+    }
+    det.append(fields);
+    box.append(det);
+  });
+}
+
+function readParams() {
+  const p = {};
+  document.querySelectorAll("#paramForm input").forEach((inp) => {
+    const k = inp.dataset.key, kind = inp.dataset.kind;
+    if (kind === "bool") p[k] = inp.checked;
+    else if (kind === "opt") p[k] = inp.value === "" ? null : parseFloat(inp.value);
+    else if (kind === "int") p[k] = parseInt(inp.value || "0", 10);
+    else p[k] = parseFloat(inp.value || "0");
+  });
+  p.park = $("srcKind").value === "generated" ? "generated" : "file";
+  return p;
+}
+
+function onParamChange(ev) {
+  if (!hasModel) return;
+  const key = ev.target.dataset.key;
+  if (RESTART.has(key)) {
+    showMsg("Zmiana „" + ev.target.previousSibling.textContent + "” zadziała po ponownej inicjalizacji.", "warn");
+    return;
+  }
+  py.globals.get("_set_params")(JSON.stringify(readParams()));
+  refresh(JSON.parse(py.globals.get("_advance")(0)));
+}
+
+// ---------- źródło parku ----------
+function sourceChanged() {
+  const k = $("srcKind").value;
+  $("srcOsm").hidden = k !== "osm";
+  $("srcFiles").hidden = k !== "files";
+  $("srcInfo").textContent = k === "generated"
+    ? "Losowy park z alejkami i krzewami; zmień „Seed parku”, żeby dostać inny układ."
+    : k === "osm" ? (osmJson ? "Wczytany: " + osmName + ". Kliknij Inicjalizuj." : "Pobierz park, potem Inicjalizuj.")
+    : "Wskaż plik ścieżek (i opcjonalnie przeszkód), potem Inicjalizuj.";
+}
+
+function osmParkName() {
+  const v = $("osmPark").value;
+  return v === "__custom" ? $("osmCustom").value.trim() : v;
+}
+
+async function fetchOsm() {
+  const name = osmParkName();
+  if (!name) { showMsg("Podaj nazwę parku.", "warn"); return; }
+  $("btnOsm").disabled = true;
+  $("osmInfo").textContent = "Pobieranie „" + name + "” z Overpass API…";
+  try {
+    const q = py.globals.get("psm").overpass_query(name);
+    const endpoints = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
+    let data = null, lastErr = null;
+    for (const url of endpoints) {
+      try {
+        const r = await fetch(url, { method: "POST", body: "data=" + encodeURIComponent(q),
+          headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        data = await r.text();
+        break;
+      } catch (e) { lastErr = e; }
+    }
+    if (data === null) throw lastErr || new Error("brak odpowiedzi");
+    const n = JSON.parse(data).elements.length;
+    if (!n) throw new Error("OSM nie zwrócił żadnych obiektów dla tej nazwy");
+    py.FS.writeFile("/tmp/osm.json", data);
+    const info = JSON.parse(py.globals.get("_load")("/tmp/osm.json", null));
+    osmJson = data; osmName = name;
+    $("btnOsmSave").disabled = false;
+    $("osmInfo").textContent = name + ": " + info.roads + " odcinków ścieżek, " + info.obstacles + " przeszkód.";
+    sourceChanged();
+    await initModel();
+  } catch (e) {
+    $("osmInfo").textContent = "Nie udało się: " + (e.message || e) + ". Spróbuj innej nazwy albo za chwilę.";
+  } finally {
+    $("btnOsm").disabled = false;
+  }
+}
+
+async function loadFiles() {
+  const rf = $("roadsFile").files[0], of = $("obsFile").files[0];
+  if (!rf) throw new Error("Wskaż plik ścieżek.");
+  const rp = "/tmp/" + rf.name;
+  py.FS.writeFile(rp, new Uint8Array(await rf.arrayBuffer()));
+  let op = null;
+  if (of) { op = "/tmp/" + of.name; py.FS.writeFile(op, new Uint8Array(await of.arrayBuffer())); }
+  return JSON.parse(py.globals.get("_load")(rp, op));
+}
+
+// ---------- symulacja ----------
+async function initModel() {
+  running = false;
+  $("btnRun").textContent = "Start";
+  showMsg("");
+  try {
+    const kind = $("srcKind").value;
+    if (kind === "files") await loadFiles();
+    if (kind === "osm" && !osmJson) { showMsg("Najpierw pobierz park z OSM.", "warn"); return; }
+    if (kind === "osm") { py.FS.writeFile("/tmp/osm.json", osmJson); py.globals.get("_load")("/tmp/osm.json", null); }
+    net = JSON.parse(py.globals.get("_init")(JSON.stringify(readParams()), $("seed").value.trim(), kind !== "generated"));
+  } catch (e) {
+    showMsg("Inicjalizacja nie powiodła się: " + (e.message || e).toString().split("\n").slice(-2).join(" "), "error");
+    return;
+  }
+  hasModel = true;
+  histLen = 0;
+  resetChart();
+  $("stNet").textContent = (net.source === "generated" ? "generowany" : "z pliku") + ", " + net.n_edges + " odcinków, " + Math.round(net.length) + " m";
+  if (net.n_components > 1) showMsg("Sieć ma " + net.n_components + " rozłączne części; agenci chodzą po największej.", "warn");
+  ["btnRun", "btnStep", "dlSummary", "dlSeries", "dlFear"].forEach((id) => $(id).disabled = false);
+  sizeCanvas();
+  refresh(JSON.parse(py.globals.get("_advance")(0)));
+}
+
+function refresh(res) {
+  snap = res.snap;
+  for (const [c, a, co, v] of res.hist) {
+    if (c % 5) continue;   // co 5. cykl na wykresie
+    chart.data.labels.push(c);
+    chart.data.datasets[0].data.push(a);
+    chart.data.datasets[1].data.push(co);
+    chart.data.datasets[2].data.push(v);
+  }
+  if (res.hist.length) chart.update("none");
+  $("stCycle").textContent = snap.cycle;
+  const m = snap.metrics;
+  const stats = [
+    ["adrenalina", m.adrenaline.toFixed(2)], ["kortyzol", m.cortisol.toFixed(2)], ["czujność", m.vigilance.toFixed(2)],
+    ["Σ adrenaliny", m.total_adrenaline.toFixed(0)], ["Σ kortyzolu", m.total_cortisol.toFixed(0)],
+    ["epizody lęku", m.fear_events], ["odcinki ze strachem", m.feared_edges], ["max fear_memory", m.max_fear_memory.toFixed(2)],
+  ];
+  $("stats").replaceChildren(...stats.map(([k, v]) => {
+    const d = document.createElement("div"); d.className = "stat";
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    d.append(dt, dd); return d;
+  }));
+  draw();
+  if (snap.finished) {
+    running = false;
+    $("btnRun").textContent = "Start";
+    showMsg("Koniec przebiegu (cykl " + snap.cycle + "). summary.csv jest gotowy do pobrania.");
+  }
+}
+
+async function loop() {
+  while (running) {
+    const n = Math.max(1, parseInt($("speed").value || "1", 10));
+    refresh(JSON.parse(py.globals.get("_advance")(n)));
+    await new Promise((r) => requestAnimationFrame(r));
+  }
+}
+
+// ---------- rysowanie ----------
+let view = null;
+function sizeCanvas() {
+  const c = $("map");
+  const [x0, y0, x1, y1] = net.bbox;
+  const w = c.clientWidth || 900;
+  const aspect = Math.min(1.4, Math.max(0.5, (y1 - y0) / Math.max(1, x1 - x0)));
+  const dpr = window.devicePixelRatio || 1;
+  c.width = Math.round(w * dpr);
+  c.height = Math.round(w * aspect * dpr);
+  const pad = 12 * dpr;
+  const s = Math.min((c.width - 2 * pad) / Math.max(1, x1 - x0), (c.height - 2 * pad) / Math.max(1, y1 - y0));
+  const ox = (c.width - s * (x1 - x0)) / 2, oy = (c.height - s * (y1 - y0)) / 2;
+  view = { s, dpr, X: (x) => ox + (x - x0) * s, Y: (y) => c.height - oy - (y - y0) * s };
+}
+
+function poly(ctx, pts, close) {
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => i ? ctx.lineTo(view.X(x), view.Y(y)) : ctx.moveTo(view.X(x), view.Y(y)));
+  if (close) ctx.closePath();
+}
+
+function tri(ctx, x, y, h, size, color) {
+  const X = view.X(x), Y = view.Y(y), r = Math.max(3 * view.dpr, size * view.s);
+  ctx.save(); ctx.translate(X, Y); ctx.rotate(-h);
+  ctx.beginPath(); ctx.moveTo(r, 0); ctx.lineTo(-r * 0.7, r * 0.6); ctx.lineTo(-r * 0.7, -r * 0.6); ctx.closePath();
+  ctx.fillStyle = color; ctx.fill(); ctx.restore();
+}
+
+function draw() {
+  if (!net || !snap || !view) return;
+  const c = $("map"), ctx = c.getContext("2d"), s = view.s, dpr = view.dpr;
+  ctx.fillStyle = css("--map-bg"); ctx.fillRect(0, 0, c.width, c.height);
+  ctx.strokeStyle = css("--line"); ctx.lineWidth = 1 * dpr;
+  for (const b of net.boundary) { poly(ctx, b, true); ctx.stroke(); }
+  ctx.fillStyle = css("--bush");
+  for (const o of net.obstacles) { poly(ctx, o, true); ctx.fill(); }
+  const pathCol = css("--path");
+  net.edges.forEach((e, i) => {
+    const f = snap.fear_memory[i];
+    poly(ctx, e, false);
+    ctx.lineWidth = Math.max(1.5 * dpr, 2 * s * 0.6);
+    ctx.globalAlpha = net.active[i] ? 1 : 0.35;
+    ctx.strokeStyle = f > 0.001 ? `rgb(${Math.round(Math.min(255, 90 + f * 30))},${Math.round(Math.max(0, 60 - f * 12))},${Math.round(Math.max(0, 50 - f * 12))})` : pathCol;
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+  for (const [x, y, a] of snap.fears) {
+    ctx.beginPath(); ctx.arc(view.X(x), view.Y(y), 10 * s, 0, 2 * Math.PI);
+    ctx.fillStyle = `rgba(208,48,32,${(a / 255 * 0.55).toFixed(3)})`; ctx.fill();
+  }
+  const [, , social, pub] = snap.zones;
+  const phCol = css("--phantom");
+  for (const [x, y] of snap.phantoms) {
+    ctx.beginPath(); ctx.arc(view.X(x), view.Y(y), pub * s, 0, 2 * Math.PI);
+    ctx.fillStyle = phCol; ctx.globalAlpha = 0.10; ctx.fill();
+    ctx.beginPath(); ctx.arc(view.X(x), view.Y(y), social * s, 0, 2 * Math.PI);
+    ctx.globalAlpha = 0.18; ctx.fill(); ctx.globalAlpha = 1;
+  }
+  const botCol = css("--bot");
+  for (const [x, y, h] of snap.bots) tri(ctx, x, y, h, 2.5, botCol);
+  for (const [x, y, h] of snap.phantoms) tri(ctx, x, y, h, 5, phCol);
+}
+
+function resetChart() {
+  if (chart) chart.destroy();
+  const ink = css("--ink"), muted = css("--muted"), line = css("--line");
+  chart = new Chart($("chart"), {
+    type: "line",
+    data: { labels: [], datasets: [
+      { label: "adrenalina", data: [], borderColor: "#2f6fb2", borderWidth: 1.2, pointRadius: 0 },
+      { label: "kortyzol", data: [], borderColor: "#8a4fbf", borderWidth: 1.2, pointRadius: 0 },
+      { label: "czujność", data: [], borderColor: ink, borderWidth: 1, pointRadius: 0 },
+    ] },
+    options: {
+      animation: false, maintainAspectRatio: false, parsing: true, normalized: true,
+      plugins: { legend: { display: false }, decimation: { enabled: true, algorithm: "min-max" } },
+      scales: {
+        x: { ticks: { color: muted, maxTicksLimit: 8 }, grid: { color: line }, title: { display: true, text: "cykl", color: muted } },
+        y: { ticks: { color: muted }, grid: { color: line }, suggestedMin: 0, suggestedMax: 15 },
+      },
+    },
+  });
+}
+
+function download(name, text) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------- batch ----------
+function parseList(s, int) {
+  return s.split(/[,;\s]+/).filter(Boolean).map((x) => int ? parseInt(x, 10) : parseFloat(x.replace(",", ".")));
+}
+
+async function runBatch() {
+  const av = parseList($("bAv").value, false), bots = parseList($("bBots").value, true);
+  const rep = Math.max(1, parseInt($("bRepeat").value, 10)), cycles = Math.max(1, parseInt($("bCycles").value, 10));
+  const seed0 = parseInt($("bSeed").value || "1", 10);
+  const kind = $("srcKind").value;
+  try {
+    if (kind === "files") await loadFiles();
+    if (kind === "osm") {
+      if (!osmJson) throw new Error("najpierw pobierz park z OSM");
+      py.FS.writeFile("/tmp/osm.json", osmJson); py.globals.get("_load")("/tmp/osm.json", null);
+    }
+  } catch (e) { $("bProgTxt").textContent = "Błąd: " + e.message; return; }
+  const plan = [];
+  for (const a of av) for (const b of bots) for (let r = 0; r < rep; r++) plan.push({ a, b, seed: seed0 + r });
+  batchStop = false;
+  $("bRun").disabled = true; $("bStop").disabled = false; $("bDl").disabled = true;
+  $("bProg").max = plan.length; $("bProg").value = 0;
+  py.runPython("_BROWS = []");
+  const rows = [];
+  const t0 = performance.now();
+  for (let i = 0; i < plan.length && !batchStop; i++) {
+    const { a, b, seed } = plan[i];
+    const params = Object.assign(readParams(), { aversion_strength: a, bot_nb: b, end_cycle: cycles });
+    py.globals.get("_init")(JSON.stringify(params), String(seed), kind !== "generated");
+    let done = false;
+    while (!done && !batchStop) {
+      done = py.runPython("_M.run(500); _M.cycle >= _M.p['end_cycle']");
+      $("bProgTxt").textContent = `przebieg ${i + 1}/${plan.length} · aversion ${a} · bot_nb ${b} · seed ${seed} · cykl ${py.runPython("_M.cycle")}`;
+      await tick();
+    }
+    if (batchStop) break;
+    rows.push(JSON.parse(py.runPython(`import json as _j; _r = psm.batch_row(${i}, _M); _BROWS.append(_r); _j.dumps(_r)`)));
+    $("bProg").value = i + 1;
+    renderBatch(rows);
+  }
+  const secs = ((performance.now() - t0) / 1000).toFixed(0);
+  $("bProgTxt").textContent = (batchStop ? "Zatrzymano" : "Gotowe") + ` · ${rows.length}/${plan.length} przebiegów · ${secs} s`;
+  batchCsv = py.runPython("psm.rows_csv(psm.BATCH_HEADER, _BROWS)");
+  $("bRun").disabled = false; $("bStop").disabled = true; $("bDl").disabled = rows.length === 0;
+  hasModel = false;
+  await initModel();
+}
+
+function renderBatch(rows) {
+  const H = JSON.parse(py.runPython("json.dumps(psm.BATCH_HEADER)"));
+  const table = (head, body) => {
+    const t = document.createElement("table");
+    const tr = document.createElement("tr");
+    head.forEach((h) => { const th = document.createElement("th"); th.textContent = h; th.className = "num"; tr.append(th); });
+    t.append(tr);
+    body.forEach((r) => {
+      const row = document.createElement("tr");
+      r.forEach((v) => { const td = document.createElement("td"); td.className = "num"; td.textContent = v; row.append(td); });
+      t.append(row);
+    });
+    return t;
+  };
+  $("bTable").replaceChildren(table(H, rows));
+  // średnie wg (aversion_strength, bot_nb)
+  const groups = new Map();
+  for (const r of rows) {
+    const k = r[2] + "|" + r[3];
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+  const sd = (a) => { const m = mean(a); return a.length > 1 ? Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1)) : 0; };
+  const summ = [...groups.values()].map((g) => {
+    const col = (i) => g.map((r) => r[i]);
+    const f = (i, d = 1) => mean(col(i)).toFixed(d) + " ± " + sd(col(i)).toFixed(d);
+    return [g[0][2], g[0][3], g.length, f(6, 0), f(7, 0), f(8, 1), f(9, 1), f(11, 1)];
+  });
+  const cap = document.createElement("h3");
+  cap.textContent = "Średnie ± SD";
+  $("bSummary").replaceChildren(cap, table(["aversion", "bot_nb", "n", "Σ adrenaliny", "Σ kortyzolu", "Σ czujności", "epizody lęku", "odcinki ze strachem"], summ));
+}
+
+// ---------- testy ----------
+async function runTests() {
+  $("tRun").disabled = true;
+  $("tSummary").textContent = "Trwa…";
+  await tick();
+  const res = JSON.parse(py.runPython("psm.run_tests_json()"));
+  const t = document.createElement("table");
+  t.innerHTML = "<tr><th>test</th><th>wynik</th><th class='num'>czas (s)</th><th>komunikat</th></tr>";
+  for (const [name, ok, msg, secs] of res) {
+    const tr = document.createElement("tr");
+    const cells = [name, ok ? "OK" : "BŁĄD", secs, msg];
+    cells.forEach((v, i) => {
+      const td = document.createElement("td");
+      td.textContent = v;
+      if (i === 1) td.className = ok ? "ok" : "fail";
+      if (i === 2) td.className = "num";
+      tr.append(td);
+    });
+    t.append(tr);
+  }
+  $("tTable").replaceChildren(t);
+  const bad = res.filter((r) => !r[1]).length;
+  $("tSummary").textContent = `${res.length - bad}/${res.length} testów przeszło`;
+  $("tRun").disabled = false;
+}
+
+// ---------- zdarzenia ----------
+document.querySelectorAll("nav.tabs button").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll("nav.tabs button").forEach((x) => x.setAttribute("aria-selected", x === b));
+  document.querySelectorAll("section[data-panel]").forEach((s) => s.hidden = s.dataset.panel !== b.dataset.tab);
+  if (b.dataset.tab === "sim" && net) { sizeCanvas(); draw(); }
+}));
+$("btnInit").onclick = () => initModel();
+$("btnRun").onclick = () => {
+  if (!hasModel) return;
+  running = !running;
+  $("btnRun").textContent = running ? "Pauza" : "Start";
+  if (running) loop();
+};
+$("btnStep").onclick = () => { if (hasModel) refresh(JSON.parse(py.globals.get("_advance")(1))); };
+$("srcKind").onchange = sourceChanged;
+$("osmPark").onchange = () => { $("osmCustomRow").hidden = $("osmPark").value !== "__custom"; };
+$("btnOsm").onclick = fetchOsm;
+$("btnOsmSave").onclick = () => {
+  py.FS.writeFile("/tmp/osm.json", osmJson);
+  const gj = py.globals.get("_osm_geojson")("/tmp/osm.json");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([gj], { type: "application/geo+json" }));
+  a.download = osmName.toLowerCase().replace(/\s+/g, "_") + ".geojson"; a.click();
+};
+$("dlSummary").onclick = () => download("summary.csv", py.runPython("_M.summary_csv()"));
+$("dlSeries").onclick = () => download("timeseries.csv", py.runPython("_M.timeseries_csv()"));
+$("dlFear").onclick = () => download("fear_edges.csv", py.runPython("_M.fear_csv()"));
+$("bRun").onclick = runBatch;
+$("bStop").onclick = () => { batchStop = true; };
+$("bDl").onclick = () => download("batch_results.csv", batchCsv);
+$("tRun").onclick = runTests;
+window.addEventListener("resize", () => { if (net) { sizeCanvas(); draw(); } });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => draw());
+
+boot();
+</script>
+</body>
+</html>
