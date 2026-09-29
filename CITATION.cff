@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "PSM: Proxemic Stress Model with route aversion (GAMA model, Python port and browser app)"
+type: software
+license: MIT
+repository-code: "https://github.com/SzymonDziedzic98/PD"
+url: "https://szymondziedzic98.github.io/PD/"
+authors:
+  - family-names: Dziedzic
+    given-names: Szymon
+    affiliation: "Wrocław University of Science and Technology, Faculty of Architecture"
+    email: szymon.dziedzic@pwr.edu.pl
+  - family-names: Szurlej
+    given-names: Mikołaj
+  - family-names: Kamiński
+    given-names: Maciej
+keywords:
+  - agent-based modelling
+  - proxemics
+  - park design
+  - planting design
+  - Pyodide
+# Do uzupełnienia po wydaniu v1.0.0: version, date-released i doi (Zenodo).
