@@ -632,7 +632,62 @@ def _road_components(roads, snap=1e-3):
     return [find(key(pts[0])) for pts in roads]
 
 
-def simplify_roads(roads, parallel=6.0, junction=15.0, step=2.0, min_spur=5.0):
+def link_dead_ends(roads, boundary=(), gap=25.0, margin=8.0):
+    """Łączy ślepe końce ścieżek, które kończą się blisko siebie wewnątrz parku.
+
+    W OSM place i okrągłe polany (np. przy placach zabaw) często nie są narysowane jako ścieżki, choć da się
+    przez nie przejść, więc alejki kończą się na ich brzegu. Ślepe końce oddalone od siebie o nie więcej niż
+    `gap` m (łańcuchowo) i leżące dalej niż `margin` m od granicy parku (czyli nie wyjścia z parku)
+    łączymy odcinkami ze wspólnym punktem w środku skupiska. Zwraca (polilinie, liczba połączonych końców)."""
+    roads = [list(r) for r in roads]
+    key = lambda q: (round(q[0], 3), round(q[1], 3))
+    deg = {}
+    for r in roads:
+        for q in (r[0], r[-1]):
+            deg[key(q)] = deg.get(key(q), 0) + 1
+    segs = [(a, b) for ring in boundary for a, b in zip(ring, ring[1:])]
+
+    def to_boundary(q):
+        best = float("inf")
+        for a, b in segs:
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            L2 = dx * dx + dy * dy
+            t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L2))
+            best = min(best, dist(q, (a[0] + t * dx, a[1] + t * dy)))
+        return best
+
+    ends = []
+    for r in roads:
+        for q in (r[0], r[-1]):
+            if deg[key(q)] == 1 and (not segs or to_boundary(q) > margin):
+                ends.append(q)
+    parent = list(range(len(ends)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i in range(len(ends)):
+        for j in range(i + 1, len(ends)):
+            if dist(ends[i], ends[j]) <= gap:
+                parent[find(i)] = find(j)
+    groups = {}
+    for i in range(len(ends)):
+        groups.setdefault(find(i), []).append(ends[i])
+    linked = 0
+    for g in groups.values():
+        if len(g) < 2:
+            continue
+        c = (sum(q[0] for q in g) / len(g), sum(q[1] for q in g) / len(g))
+        for q in g:
+            roads.append([q, c])
+        linked += len(g)
+    return roads, linked
+
+
+def simplify_roads(roads, parallel=3.0, junction=6.0, step=1.0, min_spur=3.0):
     """Upraszcza sieć ścieżek z OSM tak, jak widzi ją pieszy.
 
     1. Ścieżki biegnące równolegle bliżej niż `parallel` m (np. dwa chodniki, alejka narysowana podwójnie)
@@ -756,7 +811,7 @@ def simplify_roads(roads, parallel=6.0, junction=15.0, step=2.0, min_spur=5.0):
         # węzły pośrednie łańcucha leżące wewnątrz skupiska też znikają
         inner = [xy[v] for v in ch[1:-1]]
         pts = [ea[1]] + [q for q in inner if dist(q, ea[1]) > junction * 0.5 and dist(q, eb[1]) > junction * 0.5] + [eb[1]]
-        if ea[0] == eb[0] and polyline_length(pts) < 4 * junction:
+        if ea[0] == eb[0] and polyline_length(pts) < 2 * junction:
             continue                        # krótki odcinek wewnątrz skupiska
         pts = [q for i, q in enumerate(pts) if i == 0 or dist(q, pts[i - 1]) > 1e-6]
         if len(pts) < 2:
@@ -1788,7 +1843,7 @@ class Model:
 # ---------------------------------------------------------------------------
 
 OSM_BRIDGE_GAP = 50.0   # m; np. szeroka ulica rozdzielająca dwie części parku
-OSM_SIMPLIFY = True     # łączenie równoległych ścieżek i skupisk skrzyżowań (simplify_roads)
+OSM_SIMPLIFY = True     # łączenie zdublowanych ścieżek i węzłów (simplify_roads) oraz ślepych końców (link_dead_ends)
 LOAD_INFO = {}
 
 
@@ -1838,6 +1893,7 @@ def load_inputs(roads_data=None, obstacles_data=None, roads_name="", obstacles_n
     if (OSM_SIMPLIFY if simplify is None else simplify) and is_osm:
         roads, info = simplify_roads(roads)
         LOAD_INFO.update(info)
+        roads, LOAD_INFO["dead_ends_linked"] = link_dead_ends(roads, boundary)
         LOAD_INFO["parts_after"] = len(set(_road_components(roads)))
     return roads, obstacles, boundary
 
@@ -2289,10 +2345,26 @@ def test_osm_conversion_splits_at_junctions():
     net = Network(roads)
     assert net.n_components() == 1 and len(net.nodes) == 4
     # ok. 70 m na 0.001° długości przy 51.1° N
-    assert 65 < net.edges[0].length < 75, net.edges[0].length
+    lens = sorted(e.length for e in net.edges)
+    assert 65 < lens[0] < 75 and 65 < lens[1] < 75, lens
     gj = features_to_geojson(osm_to_features(osm))
     back = load_inputs(json.dumps(gj), None, "park.geojson")
     assert len(back[0]) == 3 and len(back[1]) == 1
+
+
+def test_link_dead_ends_joins_close_ends_inside_park():
+    # dwie ścieżki kończą się po obu stronach placu (12 m odstępu), trzecia kończy się daleko
+    a = [(0.0, 0.0), (44.0, 0.0)]
+    b = [(56.0, 0.0), (100.0, 0.0)]
+    c = [(0.0, 60.0), (40.0, 60.0)]
+    boundary = [[(-50.0, -50.0), (150.0, -50.0), (150.0, 150.0), (-50.0, 150.0), (-50.0, -50.0)]]
+    roads, n = link_dead_ends([a, b, c], boundary, gap=25.0)
+    assert n == 2, n                      # dwa końce przy placu
+    net = Network(roads)
+    assert net.n_components() == 2        # a+b połączone przez plac, c osobno
+    # końce przy granicy parku (wejścia) nie są łączone
+    roads, n = link_dead_ends([a, b], [[(40.0, -50.0), (40.0, 50.0)], [(60.0, -50.0), (60.0, 50.0)]], gap=25.0)
+    assert n == 0, n
 
 
 def test_query_mentions_park_and_city():

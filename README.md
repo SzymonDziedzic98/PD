@@ -25,8 +25,9 @@ Symulacja zatrzymuje się po 10 000 cyklach; w cyklu 9999 wyniki są dopisywane 
   - `python src/psm.py --fetch-osm "Park Staszica" --out park_staszica.geojson` (Overpass API, wymaga internetu).
     Przeszkody z OSM: zarośla, zadrzewienia i lasy (także relacje multipolygon), żywopłoty, mury, szpalery drzew, budynki.
     Rozłączne kawałki ścieżek z OSM są łączone odcinkami do 50 m (`OSM_BRIDGE_GAP`), także we wczytanych plikach GeoJSON; pliki SHP zostają bez zmian.
-    Sieć z OSM/GeoJSON jest też upraszczana (`simplify_roads`, `OSM_SIMPLIFY`): ścieżki równoległe bliżej niż 6 m łączą się w jedną,
-    a skupiska skrzyżowań bliżej niż 15 m w jedno skrzyżowanie. `bush_setback_scope = all` liczy odsunięcie krzewów od każdego skrzyżowania.
+    Sieć z OSM/GeoJSON jest też upraszczana (`simplify_roads`, `OSM_SIMPLIFY`): ścieżki równoległe bliżej niż 3 m łączą się w jedną,
+    a skupiska skrzyżowań bliżej niż 6 m w jedno skrzyżowanie. Ślepe końce do 25 m od siebie wewnątrz parku (place, polany
+    nieoznaczone w OSM) łączy `link_dead_ends`. `bush_setback_scope = all` liczy odsunięcie krzewów od każdego skrzyżowania.
 - `web/index.html` – uruchamia `psm.py` w przeglądarce (Pyodide): mapa parku z pamięcią strachu na ścieżkach,
   strefy Halla phantoma, wykres adrenaliny, kortyzolu i czujności, batch, testy i pobieranie CSV.
   Otwórz przez serwer HTTP uruchomiony w głównym katalogu repozytorium: `python -m http.server`, potem `http://localhost:8000/web/` (strona wczytuje `../src/psm.py`).
