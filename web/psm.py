@@ -92,6 +92,7 @@ DEFAULTS = {
     "bush_junction_share": 0.5,    # udział powierzchni w narożnikach skrzyżowań
     "bush_junction_distance": 2.0, # m, odstęp krawędzi krzewu od węzła skrzyżowania
     "bush_path_offset": 1.0,       # m, odstęp krawędzi krzewu od osi ścieżki
+    "bush_setback_scope": "own",   # "own": odsunięcie od własnego skrzyżowania; "all": od każdego skrzyżowania
     "junction_zone": 15.0,         # m, krzewy "przy ścieżce" leżą dalej niż tyle od skrzyżowań
     # izowisty (analiza widoczności)
     "isovist_spacing": 5.0,        # m, co ile próbkować ścieżki
@@ -104,6 +105,7 @@ CHOICES = {
     "fear_scope": ["shared", "individual"],
     "planting": ["default", "controlled", "none"],
     "bush_form": ["clumps", "band"],
+    "bush_setback_scope": ["own", "all"],
 }
 
 HALL_BASE = {"intimate": 0.45, "personal": 1.2, "social": 3.6, "public": 10.0}
@@ -152,6 +154,7 @@ GUI_PARAMETERS = [
         ("bush_junction_share", "Udział w narożnikach skrzyżowań"),
         ("bush_junction_distance", "Odstęp od węzła skrzyżowania (m)"),
         ("bush_path_offset", "Odstęp od osi ścieżki (m)"),
+        ("bush_setback_scope", "Odsunięcie od (own = swojego / all = każdego skrzyżowania)"),
         ("junction_zone", "Strefa skrzyżowania (m)"),
     ]),
     ("Przebieg", [
@@ -170,7 +173,7 @@ GUI_PARAMETERS = [
 RESTART_KEYS = {"bot_nb", "phantom_nb", "bot_speed_kmh", "bot_speed_sd", "phantom_speed_kmh",
                 "park_seed", "park_width", "park_height", "park_bushes", "step_min", "largest_component",
                 "bot_graph", "fear_scope", "planting", "planting_seed", "bush_area_total", "bush_radius",
-                "bush_junction_share", "bush_junction_distance", "bush_path_offset", "junction_zone",
+                "bush_junction_share", "bush_junction_distance", "bush_path_offset", "junction_zone", "bush_setback_scope",
                 "bush_form", "bush_band_width", "bush_band_length"}
 
 
@@ -629,6 +632,167 @@ def _road_components(roads, snap=1e-3):
     return [find(key(pts[0])) for pts in roads]
 
 
+def simplify_roads(roads, parallel=6.0, junction=15.0, step=2.0, min_spur=5.0):
+    """Upraszcza sieć ścieżek z OSM tak, jak widzi ją pieszy.
+
+    1. Ścieżki biegnące równolegle bliżej niż `parallel` m (np. dwa chodniki, alejka narysowana podwójnie)
+       łączy w jedną oś: punkty co `step` m kolejnych linii (od najdłuższej) są przyciągane do najbliższego
+       punktu już przetworzonych linii, jeśli leży bliżej niż `parallel`.
+    2. Skupiska skrzyżowań (węzłów stopnia >= 3) bliższe niż `junction` m łączy w jeden węzeł w ich środku;
+       krótkie odcinki między nimi znikają.
+    3. Usuwa krótkie ślepe końcówki (< `min_spur` m), które powstają przy łączeniu.
+    Zwraca (polilinie, info)."""
+    roads = [[tuple(p) for p in r] for r in roads if len(r) >= 2 and polyline_length(r) > 0]
+    order = sorted(range(len(roads)), key=lambda i: -polyline_length(roads[i]))
+    pos, members, owner = [], [], []          # punkty-zalążki: pozycja, suma członków, (linia, indeks)
+    grid = {}
+    cell = max(parallel, step)
+    key = lambda q: (int(math.floor(q[0] / cell)), int(math.floor(q[1] / cell)))
+    line_seeds = {}
+    seqs = []
+    for li in order:
+        pts = roads[li]
+        dense = [pts[0]]
+        for a, b in zip(pts, pts[1:]):
+            n = max(1, int(math.ceil(dist(a, b) / step)))
+            dense += [(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n) for k in range(1, n + 1)]
+        own = []
+        seq = []
+        for q in dense:
+            best, bd = None, parallel
+            ci, cj = key(q)
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    for sid in grid.get((ci + di, cj + dj), ()):
+                        if owner[sid][0] == li:
+                            continue
+                        d = dist(q, pos[sid])
+                        if d < bd:
+                            best, bd = sid, d
+            if best is None:
+                best = len(pos)
+                pos.append(q)
+                members.append([q[0], q[1], 1])
+                owner.append((li, len(own)))
+                own.append(best)
+                grid.setdefault(key(q), []).append(best)
+            else:
+                m = members[best]
+                m[0] += q[0]
+                m[1] += q[1]
+                m[2] += 1
+            # ciągłość: przeskok między zalążkami tej samej innej linii uzupełniamy punktami pośrednimi
+            if seq and seq[-1] != best:
+                la, ia = owner[seq[-1]]
+                lb, ib = owner[best]
+                if la == lb and la != li and abs(ib - ia) > 1:
+                    stepi = 1 if ib > ia else -1
+                    seq.extend(line_seeds[la][ia + stepi:ib:stepi])
+            if not seq or seq[-1] != best:
+                seq.append(best)
+        line_seeds[li] = own
+        seqs.append(seq)
+    xy = [(m[0] / m[2], m[1] / m[2]) for m in members]
+    adj = {}
+    for seq in seqs:
+        for a, b in zip(seq, seq[1:]):
+            if a != b:
+                adj.setdefault(a, set()).add(b)
+                adj.setdefault(b, set()).add(a)
+    n_before = len(junctions(roads))
+
+    def chains(adj):
+        """Łańcuchy między węzłami stopnia != 2 (i pętle z samych węzłów stopnia 2)."""
+        seen = set()
+        out = []
+        ends = [v for v in adj if len(adj[v]) != 2]
+        for a in ends:
+            for b in adj[a]:
+                if (a, b) in seen:
+                    continue
+                ch = [a, b]
+                seen.add((a, b))
+                seen.add((b, a))
+                while len(adj[ch[-1]]) == 2:
+                    nxt = [x for x in adj[ch[-1]] if x != ch[-2]]
+                    if not nxt or (ch[-1], nxt[0]) in seen:
+                        break
+                    seen.add((ch[-1], nxt[0]))
+                    seen.add((nxt[0], ch[-1]))
+                    ch.append(nxt[0])
+                out.append(ch)
+        for a in adj:
+            for b in adj[a]:
+                if (a, b) not in seen:      # pętla bez węzłów końcowych
+                    ch = [a, b]
+                    seen.add((a, b))
+                    seen.add((b, a))
+                    while ch[-1] != a:
+                        nxt = [x for x in adj[ch[-1]] if x != ch[-2] and (ch[-1], x) not in seen]
+                        if not nxt:
+                            break
+                        seen.add((ch[-1], nxt[0]))
+                        seen.add((nxt[0], ch[-1]))
+                        ch.append(nxt[0])
+                    out.append(ch)
+        return out
+
+    # skupiska skrzyżowań: najpierw węzły o najwyższym stopniu zbierają sąsiednie w promieniu `junction`
+    jn = sorted((v for v in adj if len(adj[v]) >= 3), key=lambda v: -len(adj[v]))
+    centre = {}
+    for v in jn:
+        if v in centre:
+            continue
+        group = [u for u in jn if u not in centre and dist(xy[u], xy[v]) <= junction]
+        c = (sum(xy[u][0] for u in group) / len(group), sum(xy[u][1] for u in group) / len(group))
+        for u in group:
+            centre[u] = (v, c)
+    lines = []
+    ends_of = {}
+    for ch in chains(adj):
+        a, b = ch[0], ch[-1]
+        ea = centre.get(a, (a, xy[a]))
+        eb = centre.get(b, (b, xy[b]))
+        # węzły pośrednie łańcucha leżące wewnątrz skupiska też znikają
+        inner = [xy[v] for v in ch[1:-1]]
+        pts = [ea[1]] + [q for q in inner if dist(q, ea[1]) > junction * 0.5 and dist(q, eb[1]) > junction * 0.5] + [eb[1]]
+        if ea[0] == eb[0] and polyline_length(pts) < 4 * junction:
+            continue                        # krótki odcinek wewnątrz skupiska
+        pts = [q for i, q in enumerate(pts) if i == 0 or dist(q, pts[i - 1]) > 1e-6]
+        if len(pts) < 2:
+            continue
+        pair = tuple(sorted((ea[0], eb[0])))
+        L = polyline_length(pts)
+        dup = False
+        for k in ends_of.get(pair, ()):
+            other = lines[k]
+            if other is not None and abs(polyline_length(other) - L) < max(junction, 0.2 * L):
+                probe = [ph for ph in pts[1:-1]] or [((pts[0][0] + pts[-1][0]) / 2, (pts[0][1] + pts[-1][1]) / 2)]
+                if max(min(dist(q, o) for o in other) for q in probe) < 2 * parallel + step:
+                    dup = True
+                    break
+        if dup:
+            continue
+        ends_of.setdefault(pair, []).append(len(lines))
+        lines.append(pts)
+    lines = [l for l in lines if l is not None]
+    # krótkie ślepe końcówki
+    while True:
+        deg = {}
+        k = lambda q: (round(q[0], 3), round(q[1], 3))
+        for l in lines:
+            for q in (l[0], l[-1]):
+                deg[k(q)] = deg.get(k(q), 0) + 1
+        keep = [l for l in lines if not (polyline_length(l) < min_spur and (deg[k(l[0])] == 1 or deg[k(l[-1])] == 1))]
+        if len(keep) == len(lines):
+            break
+        lines = keep
+    n_after = len(junctions(lines)) if lines else 0
+    return lines, {"junctions_before": n_before, "junctions_after": n_after,
+                   "length_before": round(sum(polyline_length(r) for r in roads)),
+                   "length_after": round(sum(polyline_length(l) for l in lines))}
+
+
 def bridge_gaps(roads, gap=25.0, snap_end=1.0):
     """Łączy rozłączne części sieci ścieżek krótkimi łącznikami (<= gap m).
 
@@ -835,6 +999,28 @@ def plant_bushes(roads, p):
                         d = d0 + piece * (L + 0.5)
                         cands.append(("b", ((node[0] + d * math.cos(ang), node[1] + d * math.sin(ang)), ang, side),
                                       node, piece))
+    near_all = p.get("bush_setback_scope", "own") == "all" and jd > 0
+    jg = {}
+    for q, _a in juncs:
+        jg.setdefault((int(math.floor(q[0] / 25.0)), int(math.floor(q[1] / 25.0))), []).append(q)
+
+    def far_from_other_junctions(sh, node):
+        """Przy bush_setback_scope = "all": krawędź krzewu co najmniej jd od każdego skrzyżowania."""
+        ring, _samples, _clear, rad = sh
+        pts = ring[:-1]
+        cx = sum(q[0] for q in pts) / len(pts)
+        cy = sum(q[1] for q in pts) / len(pts)
+        gi, gj = int(math.floor(cx / 25.0)), int(math.floor(cy / 25.0))
+        k = int(math.ceil((jd + L + r) / 25.0)) + 1
+        for i in range(gi - k, gi + k + 1):
+            for j in range(gj - k, gj + k + 1):
+                for q in jg.get((i, j), ()):
+                    if q is node:
+                        continue
+                    if min(dist(q, z) for z in pts) < jd - 1e-6:
+                        return False
+        return True
+
     rng.shuffle(cands)
     # najpierw odcinki najbliżej węzła, potem drugie w ciągu (kolejność losowa w obrębie grupy)
     cands.sort(key=lambda c: c[3])
@@ -844,6 +1030,8 @@ def plant_bushes(roads, p):
         if n_j >= n_junc:
             break
         sh = shape_clump(arg) if kind == "c" else shape_band(*arg)
+        if near_all and not far_from_other_junctions(sh, node):
+            continue
         if free(sh):
             put(sh)
             n_j += 1
@@ -1600,10 +1788,12 @@ class Model:
 # ---------------------------------------------------------------------------
 
 OSM_BRIDGE_GAP = 50.0   # m; np. szeroka ulica rozdzielająca dwie części parku
+OSM_SIMPLIFY = True     # łączenie równoległych ścieżek i skupisk skrzyżowań (simplify_roads)
 LOAD_INFO = {}
 
 
-def load_inputs(roads_data=None, obstacles_data=None, roads_name="", obstacles_name="", bridge_gap=None):
+def load_inputs(roads_data=None, obstacles_data=None, roads_name="", obstacles_name="", bridge_gap=None,
+                simplify=None):
     """Bajty/tekst plików -> (roads, obstacles, boundary). Obsługuje .shp i .geojson/.json.
 
     bridge_gap: łączenie rozłącznych części sieci (m); domyślnie OSM_BRIDGE_GAP dla danych z Overpass
@@ -1645,6 +1835,10 @@ def load_inputs(roads_data=None, obstacles_data=None, roads_name="", obstacles_n
     if gap > 0 and LOAD_INFO["parts_before"] > 1:
         roads, LOAD_INFO["bridges"] = bridge_gaps(roads, gap)
     LOAD_INFO["parts_after"] = len(set(_road_components(roads)))
+    if (OSM_SIMPLIFY if simplify is None else simplify) and is_osm:
+        roads, info = simplify_roads(roads)
+        LOAD_INFO.update(info)
+        LOAD_INFO["parts_after"] = len(set(_road_components(roads)))
     return roads, obstacles, boundary
 
 
@@ -2127,6 +2321,36 @@ def test_geojson_bridged_but_shp_distance_kept():
     assert LOAD_INFO["parts_before"] == 2 and LOAD_INFO["parts_after"] == 1   # 40 m < OSM_BRIDGE_GAP
     load_inputs(json.dumps(fc), None, "p.geojson", bridge_gap=0)
     assert LOAD_INFO["parts_after"] == 2
+
+
+def test_simplify_merges_parallel_paths_and_junction_clusters():
+    a = [(0.0, 0.0), (200.0, 0.0)]
+    b = [(0.0, 3.0), (200.0, 3.0)]               # druga linia 3 m obok: ta sama alejka
+    c = [(100.0, 0.0), (100.0, 120.0)]           # boczna ścieżka
+    d = [(108.0, 0.0), (108.0, -80.0)]           # druga boczna 8 m dalej: jedno skupisko skrzyżowań
+    lines, info = simplify_roads([a, b, c, d], parallel=6.0, junction=15.0)
+    total = sum(polyline_length(l) for l in lines)
+    assert abs(total - (200 + 120 + 80)) < 25, total
+    assert len(junctions(lines)) == 1 and info["junctions_after"] == 1
+    assert len(set(_road_components(lines))) == 1
+
+
+def test_setback_scope_all_keeps_distance_to_every_junction():
+    roads = [[(0.0, 0.0), (100.0, 0.0)], [(100.0, 0.0), (125.0, 0.0)], [(125.0, 0.0), (300.0, 0.0)],
+             [(100.0, -100.0), (100.0, 0.0)], [(100.0, 0.0), (100.0, 100.0)], [(125.0, 0.0), (125.0, 100.0)]]
+    base = {"planting": "controlled", "bush_junction_share": 1.0, "bush_junction_distance": 15.0,
+            "bush_area_total": 3000.0}
+    js = [n for n, _a in junctions(roads)]
+    assert len(js) == 2
+    for scope in ("own", "all"):
+        obs, info = plant_bushes(roads, resolved_params(dict(base, bush_setback_scope=scope)))
+        near = obs[:info["n_junction"]]
+        assert near
+        dmin = min(min(dist(q, j) for q in ring[0][:-1] for j in js) for ring in near)
+        if scope == "all":
+            assert dmin >= 15.0 - 1e-6, dmin
+        else:
+            assert dmin < 15.0      # bez warunku krzew stoi 15 m od swojego, ale bliżej sąsiedniego skrzyżowania
 
 
 def test_assemble_rings_from_fragments():

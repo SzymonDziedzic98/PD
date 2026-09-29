@@ -195,6 +195,7 @@ const I18N_PARAM_EN = {
   bush_form: "Form (clumps / band)", bush_radius: "Clump radius (m)", bush_band_width: "Band width (m)",
   bush_band_length: "Band segment length (m)", bush_junction_share: "Share at junction corners",
   bush_junction_distance: "Setback from junction node (m)", bush_path_offset: "Offset from path axis (m)",
+  bush_setback_scope: "Setback from (own = its junction / all = every junction)",
   junction_zone: "Junction zone (m)",
   end_cycle: "End (cycle)", step_min: "Step (min)",
   park_seed: "Park seed", park_width: "Width (m)", park_height: "Height (m)", park_bushes: "Number of shrubs",
