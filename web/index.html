@@ -643,7 +643,8 @@ async function fetchOsm() {
     $("btnOsmSave").disabled = false;
     $("osmInfo").textContent = name + ": " + info.roads + L(" odcinków ścieżek, ", " path segments, ") + info.obstacles + L(" przeszkód", " obstacles") +
       (info.bridges ? L("; połączono ", "; joined ") + info.parts_before + L(" rozłącznych części ", " separate parts with ") + info.bridges + L(` łącznikami (do ${GAP} m)`, ` links (up to ${GAP} m)`) : "") +
-      (info.parts_after > 1 ? L("; zostało ", "; ") + info.parts_after + L(` części (dalej niż ${GAP} m)`, ` parts remain (further apart than ${GAP} m)`) : "") + ".";
+      (info.parts_after > 1 ? L("; zostało ", "; ") + info.parts_after + L(` części (dalej niż ${GAP} m)`, ` parts remain (further apart than ${GAP} m)`) : "")  +
+      (info.junctions_before ? L("; uproszczono sieć: skrzyżowania ", "; network simplified: junctions ") + info.junctions_before + " → " + info.junctions_after : "") + ".";
     sourceChanged();
     await initModel();
   } catch (e) {
@@ -1074,8 +1075,8 @@ function renderLayerInfo() {
 function renderOsmInfo() {
   if (osmInfoSet) return;
   $("osmInfo").textContent = L(
-    `Ścieżki (highway=footway, path, …) w granicach parku; przeszkody: zarośla, zadrzewienia i lasy, żywopłoty, mury, szpalery drzew i budynki. Rozłączne kawałki ścieżek (np. po drugiej stronie ulicy) są łączone odcinkami do ${GAP} m. Pobrane parki są zapamiętywane w przeglądarce.`,
-    `Paths (highway=footway, path, …) inside the park boundary; obstacles: scrub, woods and forests, hedges, walls, tree rows and buildings. Separate pieces of the path network (e.g. across a street) are joined by links of up to ${GAP} m. Fetched parks are cached in the browser.`);
+    `Ścieżki (highway=footway, path, …) w granicach parku; przeszkody: zarośla, zadrzewienia i lasy, żywopłoty, mury, szpalery drzew i budynki. Rozłączne kawałki ścieżek (np. po drugiej stronie ulicy) są łączone odcinkami do ${GAP} m. Ścieżki równoległe bliżej niż 6 m są łączone w jedną, a skupiska skrzyżowań bliżej niż 15 m w jedno skrzyżowanie. Pobrane parki są zapamiętywane w przeglądarce.`,
+    `Paths (highway=footway, path, …) inside the park boundary; obstacles: scrub, woods and forests, hedges, walls, tree rows and buildings. Separate pieces of the path network (e.g. across a street) are joined by links of up to ${GAP} m. Parallel paths closer than 6 m are merged into one, and clusters of junctions closer than 15 m into one junction. Fetched parks are cached in the browser.`);
 }
 
 I18N.onChange(() => {

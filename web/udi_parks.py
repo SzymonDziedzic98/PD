@@ -6,6 +6,8 @@ parku generowanego, ok. 79 m² na skrzyżowanie) × mnożnik 0,25 / 0,5 / 1.
 Liczba odwiedzających skalowana długością ścieżek: 50 os. na 2557 m (ok. 19,6 os./km), jak średnia frekwencja w E1.
 W każdym przebiegu 10 phantomów z osobną pamięcią strachu (fear_scope = individual); phantomy widzą tylko boty,
 więc są niezależnymi obserwatorami tej samej symulacji. Boty nie znają strachu phantomów (bot_graph = plain).
+Sieć z OSM jest upraszczana przy wczytywaniu (simplify_roads: równoległe ścieżki do 6 m, skupiska skrzyżowań do 15 m),
+a odsunięcie krzewów liczy się od każdego skrzyżowania (bush_setback_scope = "all").
 
     python udi_parks.py PARK.geojson [PARK2.geojson ...] --reps 3 --jobs 4 --out wyniki
 """
@@ -55,7 +57,8 @@ def plan(paths, reps, mults=MULTS, bots_per_m=REF_BOTS_PER_M):
                 for sb in ue.SETBACKS + [None]:
                     for r in range(reps):
                         o = ue.cell(sb, form, bots, {"planting_seed": 1 + r, "bush_area_total": REF_DENSITY * nj * mult,
-                                                     "phantom_nb": PHANTOMS, "fear_scope": "individual"})
+                                                     "phantom_nb": PHANTOMS, "fear_scope": "individual",
+                                                     "bush_setback_scope": "all"})
                         jobs.append((path, mult, ue.label_of(sb), r, o))
     return jobs
 
