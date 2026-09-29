@@ -1,6 +1,8 @@
 # PD
 Proxemics Stress
 
+[English description: README.en.md](README.en.md)
+
 Model agentowy w GAMA (Proxemic Stress Model) z modyfikacją: sprzężenie zwrotne między stresem a wyborem trasy.
 
 ## Model
@@ -15,24 +17,25 @@ Model agentowy w GAMA (Proxemic Stress Model) z modyfikacją: sprzężenie zwrot
 
 Symulacja zatrzymuje się po 10 000 cyklach; w cyklu 9999 wyniki są dopisywane do `results/summary.csv`.
 
-## Wersja w Pythonie / w przeglądarce (`web/`)
+## Wersja w Pythonie (`src/`) i w przeglądarce (`web/`)
 
-- `web/psm.py` – port `models/Hall_AC_aversion.gaml` do czystego Pythona (tylko biblioteka standardowa):
+- `src/psm.py` – port `models/Hall_AC_aversion.gaml` do czystego Pythona (tylko biblioteka standardowa):
   model, przegląd `aversion_strength` (batch), testy, czytnik `.shp`/GeoJSON i import parku z OpenStreetMap.
-  - `python web/psm.py --test`
-  - `python web/psm.py --run --roads Staszica_SHP_sciezki_01.shp --obstacles Staszica_SHP_krzaki_09.shp`
-  - `python web/psm.py --batch --aversion 0,2.5,5,10 --repeat 5 --cycles 10000 --csv batch_results.csv`
-  - `python web/psm.py --fetch-osm "Park Staszica" --out park_staszica.geojson` (Overpass API, wymaga internetu).
+  - `python src/psm.py --test`
+  - `python src/psm.py --run --roads Staszica_SHP_sciezki_01.shp --obstacles Staszica_SHP_krzaki_09.shp`
+  - `python src/psm.py --batch --aversion 0,2.5,5,10 --repeat 5 --cycles 10000 --csv batch_results.csv`
+  - `python src/psm.py --fetch-osm "Park Staszica" --out park_staszica.geojson` (Overpass API, wymaga internetu).
     Przeszkody z OSM: zarośla, zadrzewienia i lasy (także relacje multipolygon), żywopłoty, mury, szpalery drzew, budynki.
     Rozłączne kawałki ścieżek z OSM są łączone odcinkami do 50 m (`OSM_BRIDGE_GAP`), także we wczytanych plikach GeoJSON; pliki SHP zostają bez zmian.
-    Sieć z OSM/GeoJSON jest też upraszczana (`simplify_roads`, `OSM_SIMPLIFY`): ścieżki równoległe bliżej niż 6 m łączą się w jedną,
-    a skupiska skrzyżowań bliżej niż 15 m w jedno skrzyżowanie. `bush_setback_scope = all` liczy odsunięcie krzewów od każdego skrzyżowania.
+    Sieć z OSM/GeoJSON jest też upraszczana (`simplify_roads`, `OSM_SIMPLIFY`): ścieżki równoległe bliżej niż 3 m łączą się w jedną,
+    a skupiska skrzyżowań bliżej niż 6 m w jedno skrzyżowanie. Ślepe końce do 25 m od siebie wewnątrz parku (place, polany
+    nieoznaczone w OSM) łączy `link_dead_ends`. `bush_setback_scope = all` liczy odsunięcie krzewów od każdego skrzyżowania.
 - `web/index.html` – uruchamia `psm.py` w przeglądarce (Pyodide): mapa parku z pamięcią strachu na ścieżkach,
   strefy Halla phantoma, wykres adrenaliny, kortyzolu i czujności, batch, testy i pobieranie CSV.
-  Otwórz przez serwer HTTP, np. `cd web && python -m http.server`, potem `http://localhost:8000`.
+  Otwórz przez serwer HTTP uruchomiony w głównym katalogu repozytorium: `python -m http.server`, potem `http://localhost:8000/web/` (strona wczytuje `../src/psm.py`).
   Interfejs jest po polsku i po angielsku: przełącznik PL/EN w nagłówku, wybór zapamiętuje przeglądarka;
   `?lang=en` albo `?lang=pl` w adresie wymusza język. Teksty angielskie są w `web/i18n.js`.
-  Workflow `.github/workflows/pages.yml` publikuje `web/` na GitHub Pages
+  Workflow `.github/workflows/pages.yml` publikuje `web/` razem z `src/psm.py` na GitHub Pages
   (jednorazowo: Settings → Pages → Source: „GitHub Actions”).
 
 ### Rozszerzenia (pod artykuł do URBAN DESIGN International)
@@ -55,13 +58,13 @@ wynosi `plain`, bo boty nie powinny znać uczuć phantoma (decyzja autora, 28.09
 - `--jobs N`: eksperymenty w N procesach (tylko CPython).
 
 ```
-python web/psm.py --planting-experiment --distances 1,4,8,12 --shares 0,0.5,1 --repeat 10 --planting-seeds 5 \
+python src/psm.py --planting-experiment --distances 1,4,8,12 --shares 0,0.5,1 --repeat 10 --planting-seeds 5 \
     --cycles 10000 --csv nasadzenia.csv --summary nasadzenia_srednie.csv
-python web/psm.py --planting-experiment --roads Staszica_SHP_sciezki_01.shp        # to samo na ścieżkach parku Staszica
-python web/psm.py --sensitivity oat --repeat 10 --cycles 10000 --summary oat.csv
-python web/psm.py --sensitivity lhs --samples 100 --cycles 10000 --summary lhs.csv
-python web/psm.py --run --isovist --edges edges.csv --set planting=controlled
-python web/psm.py --batch --sweep bot_graph=weighted,plain --sweep aversion_strength=0,5 --repeat 10
+python src/psm.py --planting-experiment --roads Staszica_SHP_sciezki_01.shp        # to samo na ścieżkach parku Staszica
+python src/psm.py --sensitivity oat --repeat 10 --cycles 10000 --summary oat.csv
+python src/psm.py --sensitivity lhs --samples 100 --cycles 10000 --summary lhs.csv
+python src/psm.py --run --isovist --edges edges.csv --set planting=controlled
+python src/psm.py --batch --sweep bot_graph=weighted,plain --sweep aversion_strength=0,5 --repeat 10
 ```
 
 Eksperymenty E1–E3 do artykułu (UDI) są zdefiniowane w `web/udi_experiments.py`, a wykresy tworzy

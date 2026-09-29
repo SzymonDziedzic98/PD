@@ -149,7 +149,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
     <progress id="loadBar"></progress>
     <p class="hint" id="loadMsg" data-noi18n>Pierwsze uruchomienie pobiera ok. 10 MB, potem przeglądarka trzyma to w pamięci podręcznej.</p>
     <div id="loadPick" hidden>
-      <p class="hint">Nie udało się wczytać <code>psm.py</code> obok strony (strona otwarta jako plik?). Wskaż plik ręcznie albo uruchom <code>python -m http.server</code> w katalogu <code>web/</code>.</p>
+      <p class="hint">Nie udało się wczytać <code>psm.py</code> (strona otwarta jako plik?). Wskaż ręcznie plik <code>src/psm.py</code> albo uruchom <code>python -m http.server</code> w głównym katalogu repozytorium i otwórz <code>http://localhost:8000/web/</code>.</p>
       <input type="file" id="pySrcFile" accept=".py">
     </div>
   </div>
@@ -387,10 +387,13 @@ async function boot() {
     return;
   }
   let src = null;
-  try {
-    const r = await fetch("psm.py", { cache: "no-cache" });
-    if (r.ok) src = await r.text();
-  } catch (e) { /* file:// – wybór ręczny poniżej */ }
+  // GitHub Pages: psm.py obok strony; lokalnie (serwer w katalogu repo): ../src/psm.py
+  for (const url of ["psm.py", "../src/psm.py"]) {
+    try {
+      const r = await fetch(url, { cache: "no-cache" });
+      if (r.ok) { src = await r.text(); break; }
+    } catch (e) { /* file:// – wybór ręczny poniżej */ }
+  }
   if (!src) {
     $("loadPick").hidden = false;
     $("loadBar").hidden = true;
@@ -644,7 +647,8 @@ async function fetchOsm() {
     $("osmInfo").textContent = name + ": " + info.roads + L(" odcinków ścieżek, ", " path segments, ") + info.obstacles + L(" przeszkód", " obstacles") +
       (info.bridges ? L("; połączono ", "; joined ") + info.parts_before + L(" rozłącznych części ", " separate parts with ") + info.bridges + L(` łącznikami (do ${GAP} m)`, ` links (up to ${GAP} m)`) : "") +
       (info.parts_after > 1 ? L("; zostało ", "; ") + info.parts_after + L(` części (dalej niż ${GAP} m)`, ` parts remain (further apart than ${GAP} m)`) : "")  +
-      (info.junctions_before ? L("; uproszczono sieć: skrzyżowania ", "; network simplified: junctions ") + info.junctions_before + " → " + info.junctions_after : "") + ".";
+      (info.junctions_before ? L("; uproszczono sieć: skrzyżowania ", "; network simplified: junctions ") + info.junctions_before + " → " + info.junctions_after : "") +
+      (info.dead_ends_linked ? L("; połączono ślepe końce: ", "; dead ends joined: ") + info.dead_ends_linked : "") + ".";
     sourceChanged();
     await initModel();
   } catch (e) {
@@ -1075,8 +1079,8 @@ function renderLayerInfo() {
 function renderOsmInfo() {
   if (osmInfoSet) return;
   $("osmInfo").textContent = L(
-    `Ścieżki (highway=footway, path, …) w granicach parku; przeszkody: zarośla, zadrzewienia i lasy, żywopłoty, mury, szpalery drzew i budynki. Rozłączne kawałki ścieżek (np. po drugiej stronie ulicy) są łączone odcinkami do ${GAP} m. Ścieżki równoległe bliżej niż 6 m są łączone w jedną, a skupiska skrzyżowań bliżej niż 15 m w jedno skrzyżowanie. Pobrane parki są zapamiętywane w przeglądarce.`,
-    `Paths (highway=footway, path, …) inside the park boundary; obstacles: scrub, woods and forests, hedges, walls, tree rows and buildings. Separate pieces of the path network (e.g. across a street) are joined by links of up to ${GAP} m. Parallel paths closer than 6 m are merged into one, and clusters of junctions closer than 15 m into one junction. Fetched parks are cached in the browser.`);
+    `Ścieżki (highway=footway, path, …) w granicach parku; przeszkody: zarośla, zadrzewienia i lasy, żywopłoty, mury, szpalery drzew i budynki. Rozłączne kawałki ścieżek (np. po drugiej stronie ulicy) są łączone odcinkami do ${GAP} m. Ścieżki równoległe bliżej niż 3 m są łączone w jedną, a skupiska skrzyżowań bliżej niż 6 m w jedno skrzyżowanie. Ślepe końce ścieżek leżące do 25 m od siebie wewnątrz parku (place, polany nieoznaczone w OSM) są łączone. Pobrane parki są zapamiętywane w przeglądarce.`,
+    `Paths (highway=footway, path, …) inside the park boundary; obstacles: scrub, woods and forests, hedges, walls, tree rows and buildings. Separate pieces of the path network (e.g. across a street) are joined by links of up to ${GAP} m. Parallel paths closer than 3 m are merged into one, and clusters of junctions closer than 6 m into one junction. Dead ends within 25 m of each other inside the park (plazas and clearings not mapped in OSM) are joined. Fetched parks are cached in the browser.`);
 }
 
 I18N.onChange(() => {

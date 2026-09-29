@@ -201,6 +201,41 @@ def fig_parks(out):
     save(fig, out, "fig_parki_setback")
 
 
+HALL_COLORS = {2.0: "#2a78d6", 3.0: "#1baf7a", 4.0: "#eb6834", 5.0: "#e87ba4"}
+HALL_MARKERS = {2.0: "o", 3.0: "^", 4.0: "s", 5.0: "D"}
+
+
+def fig_e1h(out):
+    """Iloraz stresu do kontroli w funkcji odsunięcia przy różnym mnożniku stref Halla; kreska = promień strefy społecznej."""
+    p = os.path.join(out, "e1h_threshold.csv")
+    if not os.path.exists(p):
+        return
+    rows = [r for r in read(p) if r["setback"] != "threshold"]
+    fig, axes = plt.subplots(1, 2, figsize=(9, 3.8), sharey=True)
+    for ax, form in zip(axes, ["clumps", "band"]):
+        style(ax)
+        ax.set_yscale("log")
+        ax.axhline(1.0, color=MUTED, linewidth=1, linestyle=(0, (4, 3)))
+        ax.axhline(1.1, color=MUTED, linewidth=0.8, linestyle=":")
+        for hm in sorted(HALL_COLORS):
+            rs = sorted((r for r in rows if r["bush_form"] == form and float(r["hall_multiplier"]) == hm),
+                        key=lambda r: float(r["setback"]))
+            ax.plot([float(r["setback"]) for r in rs], [float(r["ratio_to_control"]) for r in rs],
+                    color=HALL_COLORS[hm], marker=HALL_MARKERS[hm], markersize=5, linewidth=1.8,
+                    label="×%g (strefa społeczna %g m)" % (hm, 3.6 * hm) if form == "clumps" else None)
+            ax.axvline(3.6 * hm, color=HALL_COLORS[hm], linewidth=0.8, alpha=0.6)
+        ax.set_title(FORM_PL[form], fontsize=11, color=INK, loc="left")
+        ax.set_xlabel("Odstęp od skrzyżowania (m)", fontsize=9, color=MUTED)
+        ax.set_xticks([0, 5, 10, 15, 20, 25, 30])
+    axes[0].set_yticks([0.5, 1, 2, 5, 10])
+    axes[0].get_yaxis().set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _p: "%g" % v))
+    axes[0].set_ylabel("Σ adrenaliny / kontrola", fontsize=9, color=MUTED)
+    fig.legend(loc="upper center", ncol=4, frameon=False, fontsize=8, bbox_to_anchor=(0.5, 1.06))
+    fig.text(0.01, -0.04, "Park generowany (seed 1), 50 odwiedzających, 30 powtórzeń. Pionowe kreski: promień strefy "
+             "społecznej przy danym mnożniku. Kropkowana linia: margines równoważności 1,10.", fontsize=8, color=MUTED)
+    save(fig, out, "fig_e1h_hall")
+
+
 if __name__ == "__main__":
     out = sys.argv[1] if len(sys.argv) > 1 else "wyniki_PSM_UDI"
     fig_e1(out)
@@ -208,4 +243,5 @@ if __name__ == "__main__":
     fig_e2(out)
     fig_e3(out)
     fig_parks(out)
+    fig_e1h(out)
     print("zapisano wykresy w", out)
