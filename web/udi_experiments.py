@@ -77,10 +77,10 @@ def e1_plan(reps, visitors=VISITORS, networks=(1,), seed0=1, setbacks=SETBACKS, 
     return plan
 
 
-def e1h_plan(reps, seed0=1):
+def e1h_plan(reps, seed0=1, setbacks=SETBACKS_H, mults=HALL_MULTS):
     plan = []
-    for hm in HALL_MULTS:
-        plan += e1_plan(reps, visitors=[50], seed0=seed0, setbacks=SETBACKS_H, extra={"hall_multiplier": hm})
+    for hm in mults:
+        plan += e1_plan(reps, visitors=[50], seed0=seed0, setbacks=setbacks, extra={"hall_multiplier": hm})
     return plan
 
 
@@ -247,6 +247,8 @@ def main(argv):
     ap.add_argument("--cycles", type=int, default=10000)
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
     ap.add_argument("--out", default="wyniki_PSM_UDI")
+    ap.add_argument("--setbacks", type=float, nargs="+", help="e1h: tylko te odsunięcia, dopisane do e1h_runs.csv w --out")
+    ap.add_argument("--hall", type=float, nargs="+", help="e1h: tylko te mnożniki stref")
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
     prog = lambda i, n: print("\r  %d/%d" % (i, n), end="", file=sys.stderr, flush=True)
@@ -278,13 +280,25 @@ def main(argv):
                             outs=["total_adrenaline", "total_vigilance", "isovist_area_mean", "isovist_blocked_mean",
                                   "rho_area_adrenaline", "rho_area_vigilance", "rho_blocked_adrenaline"]))
         elif which == "e1h":
-            plan = e1h_plan(a.reps or 30)
+            sbs = a.setbacks or SETBACKS_H
+            plan = e1h_plan(a.reps or 30, setbacks=sbs, mults=a.hall or HALL_MULTS)
+            prev = os.path.join(a.out, "e1h_runs.csv")
+            extend = bool(a.setbacks) and os.path.exists(prev)
+            if extend:
+                plan = [x for x in plan if x[2] != "none"]
             rows = psm.run_plan(plan, a.cycles, BASE, None, prog, a.jobs)
-            write(os.path.join(a.out, "e1h_runs.csv"), rows)
+            if extend:
+                # dopisz nowe odsunięcia do wcześniejszych przebiegów (kontrola z tymi samymi seedami już tam jest)
+                with open(prev, encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f)) + rows
+            write(prev, rows)
+            with open(prev, encoding="utf-8") as f:   # jednolite typy (tekst z CSV) dla starych i nowych wierszy
+                rows = list(csv.DictReader(f))
+            sbs = sorted({float(r["label"]) for r in rows if r["label"] != "none"})
             write(os.path.join(a.out, "e1h_summary.csv"),
                   summarize(rows, ["hall_multiplier", "bush_form", "label"], extra=["setback_real"]))
             write(os.path.join(a.out, "e1h_threshold.csv"),
-                  thresholds(rows, ("hall_multiplier", "bush_form"), setbacks=SETBACKS_H))
+                  thresholds(rows, ("hall_multiplier", "bush_form"), setbacks=sbs))
         elif which == "e2r":
             rows = []
             for tag, radius in ISOVIST_RADII:
