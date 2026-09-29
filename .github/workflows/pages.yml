@@ -1,11 +1,11 @@
-# Publikuje katalog web/ (psm.py + index.html) na GitHub Pages.
+# Publikuje katalog web/ (index.html) razem z src/psm.py na GitHub Pages.
 # Wymaga: Settings -> Pages -> Source: "GitHub Actions".
 name: Strona PSM (GitHub Pages)
 
 on:
   push:
     branches: [main]
-    paths: ["web/**", ".github/workflows/pages.yml"]
+    paths: ["web/**", "src/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -25,11 +25,16 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
-      - name: Testy modelu (python web/psm.py --test)
-        run: python3 web/psm.py --test
+      - name: Testy modelu (python src/psm.py --test)
+        run: python3 src/psm.py --test
+      - name: Strona z modelem (web/ + src/psm.py)
+        run: |
+          mkdir _site
+          cp -r web/. _site/
+          cp src/psm.py _site/psm.py
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: web
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v5
