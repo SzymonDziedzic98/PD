@@ -87,7 +87,7 @@ const L = (pl, en) => (I18N.lang === "en" ? en : pl);
 // słownik PL → EN dla tekstów statycznych index.html (klucz: tekst po zwinięciu spacji)
 const I18N_EN = {
  "Ładowanie Pythona (Pyodide)…": "Loading Python (Pyodide)…",
- "Nie udało się wczytać <code>psm.py</code> obok strony (strona otwarta jako plik?). Wskaż plik ręcznie albo uruchom <code>python -m http.server</code> w katalogu <code>web/</code>.": "Could not load <code>psm.py</code> next to the page (opened as a local file?). Pick the file by hand or run <code>python -m http.server</code> in the <code>web/</code> folder.",
+ "Nie udało się wczytać <code>psm.py</code> (strona otwarta jako plik?). Wskaż ręcznie plik <code>src/psm.py</code> albo uruchom <code>python -m http.server</code> w głównym katalogu repozytorium i otwórz <code>http://localhost:8000/web/</code>.": "Could not load <code>psm.py</code> (opened as a local file?). Pick <code>src/psm.py</code> by hand or run <code>python -m http.server</code> in the repository root and open <code>http://localhost:8000/web/</code>.",
  "PSM – stres proksemiczny i awersja do tras": "PSM – proxemic stress and route aversion",
  "Port modelu <code>Hall_AC_aversion.gaml</code> do Pythona, uruchamiany w przeglądarce. Parametry z oznaczeniem ↻ działają po ponownej inicjalizacji.": "Python port of the <code>Hall_AC_aversion.gaml</code> model, running in the browser. Parameters marked ↻ take effect after re-initialisation.",
  "Symulacja": "Simulation",

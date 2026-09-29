@@ -149,7 +149,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
     <progress id="loadBar"></progress>
     <p class="hint" id="loadMsg" data-noi18n>Pierwsze uruchomienie pobiera ok. 10 MB, potem przeglądarka trzyma to w pamięci podręcznej.</p>
     <div id="loadPick" hidden>
-      <p class="hint">Nie udało się wczytać <code>psm.py</code> obok strony (strona otwarta jako plik?). Wskaż plik ręcznie albo uruchom <code>python -m http.server</code> w katalogu <code>web/</code>.</p>
+      <p class="hint">Nie udało się wczytać <code>psm.py</code> (strona otwarta jako plik?). Wskaż ręcznie plik <code>src/psm.py</code> albo uruchom <code>python -m http.server</code> w głównym katalogu repozytorium i otwórz <code>http://localhost:8000/web/</code>.</p>
       <input type="file" id="pySrcFile" accept=".py">
     </div>
   </div>
@@ -387,10 +387,13 @@ async function boot() {
     return;
   }
   let src = null;
-  try {
-    const r = await fetch("psm.py", { cache: "no-cache" });
-    if (r.ok) src = await r.text();
-  } catch (e) { /* file:// – wybór ręczny poniżej */ }
+  // GitHub Pages: psm.py obok strony; lokalnie (serwer w katalogu repo): ../src/psm.py
+  for (const url of ["psm.py", "../src/psm.py"]) {
+    try {
+      const r = await fetch(url, { cache: "no-cache" });
+      if (r.ok) { src = await r.text(); break; }
+    } catch (e) { /* file:// – wybór ręczny poniżej */ }
+  }
   if (!src) {
     $("loadPick").hidden = false;
     $("loadBar").hidden = true;
