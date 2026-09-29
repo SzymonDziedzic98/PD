@@ -1,6 +1,8 @@
 # PD
 Proxemics Stress
 
+[English description: README.en.md](README.en.md)
+
 Model agentowy w GAMA (Proxemic Stress Model) z modyfikacją: sprzężenie zwrotne między stresem a wyborem trasy.
 
 ## Model
