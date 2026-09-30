@@ -43,7 +43,7 @@ A design variant drawn in QGIS or CAD can be loaded as GeoJSON or as ESRI Shapef
 - Paths are lines (LineString or MultiLineString). Obstacles that block the view, such as shrubs, hedges, walls and buildings, are polygons. In a separate obstacles file, lines are also treated as obstacles (a hedge drawn as a line).
 - In one combined GeoJSON file, the feature property `layer` may be `roads`, `obstacles` or `boundary`. Without it, lines become paths and polygons become obstacles.
 - Coordinates may be in metres (any projected system, for example EPSG:2180) or in degrees (WGS 84). Degrees are detected automatically and projected locally to metres.
-- Paths must meet at shared vertices to form junctions. Disconnected parts of a GeoJSON network are joined by short links up to 50 m (`OSM_BRIDGE_GAP`), and nearby parallel paths and junction clusters are merged. Shapefiles are loaded as drawn. Agents are placed on the largest connected part of the network.
+- Paths must meet at shared vertices to form junctions. Disconnected parts of a GeoJSON network are joined by short links up to 50 m (`OSM_BRIDGE_GAP`). Parallel paths closer than 3 m and junction clusters within 6 m are merged, and dead ends less than 25 m apart inside the park are joined. Shapefiles are loaded as drawn. Agents are placed on the largest connected part of the network.
 
 In the browser the same files are chosen in the "Park" panel, and parks from OpenStreetMap can be downloaded by name.
 
@@ -69,6 +69,32 @@ The browser app shows the same results as map layers (fear memory, mean adrenali
 
 Default values reproduce GAMA with one exception. `bot_graph` defaults to `plain`, so bots choose routes by length only and do not know where the phantom was afraid. `bot_graph=weighted` restores the GAMA behaviour. Further options (`fear_scope`, isovists, OAT and LHS sensitivity, `--jobs N` for parallel runs) are described in the Polish README.
 
+## Python API
+
+`src/psm.py` is one module on purpose: the browser app downloads this single file into Pyodide, and command-line users need nothing but Python. The functions below are the stable entry points; everything else is internal.
+
+- `make_model(overrides, seed, cycles, params=None, inputs=None)` builds a `Model`; `overrides` is a dict of parameters, `inputs` the result of `load_files`.
+- `Model.run()`, `Model.step()`, `Model.metrics()`, `Model.summary_csv()`, `Model.edge_csv()` run a model and return its outputs.
+- `load_files(roads_path, obstacles_path=None)` reads GeoJSON or shapefiles; `fetch_osm(park_name, city)` downloads a park from OpenStreetMap; `generate_park(seed)` builds a synthetic park.
+- `batch_plan`, `planting_plan`, `oat_plan`, `lhs_plan` build experiment plans; `run_plan(plan, cycles, jobs=N)` runs them and returns one dict per run; `dict_rows_csv(rows)` and `group_summary(rows, keys)` turn them into tables.
+
+```python
+import sys
+sys.path.insert(0, "src")
+import psm
+
+# one run on the generated park
+m = psm.make_model({"bot_nb": 50, "planting": "controlled", "bush_junction_share": 1,
+                    "bush_junction_distance": 0}, seed=1, cycles=10000).run()
+print(m.metrics()["total_adrenaline"])
+open("edges.csv", "w").write(m.edge_csv())
+
+# a planting experiment on the same park, 4 processes
+plan = psm.planting_plan(distances=(0, 20), shares=(1,), repeat=5)
+rows = psm.run_plan(plan, cycles=10000, jobs=4)
+open("runs.csv", "w").write(psm.dict_rows_csv(rows))
+```
+
 ## Tests
 
-`python src/psm.py --test` runs 37 tests of the port: the model equations against the GAML source, routing with fear memory, line of sight, file readers, network simplification, planting and the experiment plans. The browser app runs the same tests from its "Tests" tab.
+`python src/psm.py --test` runs the tests of the port: the model equations against the GAML source, routing with fear memory, line of sight, file readers, network simplification, planting and the experiment plans. The browser app runs the same tests from its "Tests" tab.
