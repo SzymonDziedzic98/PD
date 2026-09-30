@@ -204,7 +204,8 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
           </select></div>
         <div class="field wide" id="osmCustomRow" hidden><label for="osmCustom">Nazwa w OSM</label>
           <input type="text" id="osmCustom" placeholder="np. Park Tołpy"></div>
-        <div class="controls"><button class="btn" id="btnOsm">Pobierz z OSM</button>
+        <div class="controls"><button class="btn" id="btnLib">Wczytaj gotowy</button>
+          <button class="btn" id="btnOsm">Pobierz z OSM</button>
           <button class="btn" id="btnOsmSave" disabled>Zapisz GeoJSON</button></div>
         <p class="hint" id="osmInfo" data-noi18n></p>
       </div>
@@ -489,8 +490,9 @@ def _iso():
                               "cmp": {k: round(v, 3) for k, v in c.items()}}))
 
 def _osm_geojson(path):
-    raw = json.loads(open(path, encoding="utf-8").read())
-    return json.dumps(psm.features_to_geojson(psm.osm_to_features(raw)))
+    # zapis sieci po poprawkach (łączenie kawałków, uproszczenie, ślepe końce) w WGS84, ze znacznikiem
+    r, o, b = psm.load_inputs(open(path, "rb").read(), None, path)
+    return json.dumps(psm.processed_geojson(r, o, b, psm.LOAD_INFO["origin"], psm.LOAD_INFO), separators=(",", ":"))
 `);
   DEFAULTS = JSON.parse(py.runPython("json.dumps(psm.DEFAULTS)"));
   TYPES = JSON.parse(py.runPython("json.dumps({k: type(v).__name__ for k, v in psm.DEFAULTS.items()})"));
@@ -640,10 +642,58 @@ async function fetchOsm() {
     if (data === null) throw lastErr || new Error(L("brak odpowiedzi", "no response"));
     const n = JSON.parse(data).elements.length;
     if (!n) throw new Error(L("OSM nie zwrócił żadnych obiektów dla tej nazwy", "OSM returned no objects for this name"));
+    await useParkData(data, name);
+  } catch (e) {
+    $("osmInfo").textContent = L("Nie udało się: ", "Failed: ") + (e.message || e) + L(". Spróbuj innej nazwy albo za chwilę.", ". Try another name or try again shortly.");
+  } finally {
+    $("btnOsm").disabled = false;
+  }
+}
+
+// gotowe parki (web/parki, już po poprawkach) – bez pobierania z Overpass
+let LIB = null;
+async function parkLibrary() {
+  if (!LIB) {
+    const r = await fetch("parki/index.json", { cache: "no-cache" });
+    if (!r.ok) throw new Error(L("brak biblioteki parków", "no park library") + " (HTTP " + r.status + ")");
+    LIB = (await r.json()).parks;
+  }
+  return LIB;
+}
+
+function libraryChanged() {
+  $("btnLib").disabled = $("osmPark").value === "__custom";
+}
+
+async function loadLibraryPark() {
+  const name = osmParkName();
+  $("btnLib").disabled = true;
+  osmInfoSet = true;
+  try {
+    const item = (await parkLibrary()).find((p) => p.name === name);
+    if (!item) throw new Error(L("tego parku nie ma w bibliotece", "this park is not in the library"));
+    const r = await fetch("parki/" + item.file, { cache: "no-cache" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    await useParkData(await r.text(), name);
+  } catch (e) {
+    $("osmInfo").textContent = L("Nie udało się: ", "Failed: ") + (e.message || e) + ".";
+  } finally {
+    libraryChanged();
+  }
+}
+
+async function useParkData(data, name) {
     py.FS.writeFile("/tmp/osm.json", data);
     const info = JSON.parse(py.globals.get("_load")("/tmp/osm.json", null));
     osmJson = data; osmName = name;
     $("btnOsmSave").disabled = false;
+    if (info.processed) {
+      $("osmInfo").textContent = name + L(" (gotowy, po poprawkach): ", " (ready, already corrected): ") + info.roads +
+        L(" odcinków ścieżek, ", " path segments, ") + info.obstacles + L(" przeszkód.", " obstacles.");
+      sourceChanged();
+      await initModel();
+      return;
+    }
     $("osmInfo").textContent = name + ": " + info.roads + L(" odcinków ścieżek, ", " path segments, ") + info.obstacles + L(" przeszkód", " obstacles") +
       (info.bridges ? L("; połączono ", "; joined ") + info.parts_before + L(" rozłącznych części ", " separate parts with ") + info.bridges + L(` łącznikami (do ${GAP} m)`, ` links (up to ${GAP} m)`) : "") +
       (info.parts_after > 1 ? L("; zostało ", "; ") + info.parts_after + L(` części (dalej niż ${GAP} m)`, ` parts remain (further apart than ${GAP} m)`) : "")  +
@@ -651,11 +701,6 @@ async function fetchOsm() {
       (info.dead_ends_linked ? L("; połączono ślepe końce: ", "; dead ends joined: ") + info.dead_ends_linked : "") + ".";
     sourceChanged();
     await initModel();
-  } catch (e) {
-    $("osmInfo").textContent = L("Nie udało się: ", "Failed: ") + (e.message || e) + L(". Spróbuj innej nazwy albo za chwilę.", ". Try another name or try again shortly.");
-  } finally {
-    $("btnOsm").disabled = false;
-  }
 }
 
 async function loadFiles() {
@@ -1011,8 +1056,9 @@ $("btnRun").onclick = () => {
 };
 $("btnStep").onclick = () => { if (hasModel) refresh(JSON.parse(py.globals.get("_advance")(1))); };
 $("srcKind").onchange = sourceChanged;
-$("osmPark").onchange = () => { $("osmCustomRow").hidden = $("osmPark").value !== "__custom"; };
+$("osmPark").onchange = () => { $("osmCustomRow").hidden = $("osmPark").value !== "__custom"; libraryChanged(); };
 $("btnOsm").onclick = fetchOsm;
+$("btnLib").onclick = loadLibraryPark;
 $("btnOsmSave").onclick = () => {
   py.FS.writeFile("/tmp/osm.json", osmJson);
   const gj = py.globals.get("_osm_geojson")("/tmp/osm.json");
@@ -1079,8 +1125,8 @@ function renderLayerInfo() {
 function renderOsmInfo() {
   if (osmInfoSet) return;
   $("osmInfo").textContent = L(
-    `Ścieżki (highway=footway, path, …) w granicach parku; przeszkody: zarośla, zadrzewienia i lasy, żywopłoty, mury, szpalery drzew i budynki. Rozłączne kawałki ścieżek (np. po drugiej stronie ulicy) są łączone odcinkami do ${GAP} m. Ścieżki równoległe bliżej niż 3 m są łączone w jedną, a skupiska skrzyżowań bliżej niż 6 m w jedno skrzyżowanie. Ślepe końce ścieżek leżące do 25 m od siebie wewnątrz parku (place, polany nieoznaczone w OSM) są łączone. Pobrane parki są zapamiętywane w przeglądarce.`,
-    `Paths (highway=footway, path, …) inside the park boundary; obstacles: scrub, woods and forests, hedges, walls, tree rows and buildings. Separate pieces of the path network (e.g. across a street) are joined by links of up to ${GAP} m. Parallel paths closer than 3 m are merged into one, and clusters of junctions closer than 6 m into one junction. Dead ends within 25 m of each other inside the park (plazas and clearings not mapped in OSM) are joined. Fetched parks are cached in the browser.`);
+    `Ścieżki (highway=footway, path, …) w granicach parku; przeszkody: zarośla, zadrzewienia i lasy, żywopłoty, mury, szpalery drzew i budynki. Rozłączne kawałki ścieżek (np. po drugiej stronie ulicy) są łączone odcinkami do ${GAP} m. Ścieżki równoległe bliżej niż 3 m są łączone w jedną, a skupiska skrzyżowań bliżej niż 6 m w jedno skrzyżowanie. Ślepe końce ścieżek leżące do 25 m od siebie wewnątrz parku (place, polany nieoznaczone w OSM) są łączone. Pobrane parki są zapamiętywane w przeglądarce. „Wczytaj gotowy” bierze park z biblioteki strony (już po tych poprawkach, bez pobierania z OSM), a „Zapisz GeoJSON” zapisuje sieć po poprawkach.`,
+    `Paths (highway=footway, path, …) inside the park boundary; obstacles: scrub, woods and forests, hedges, walls, tree rows and buildings. Separate pieces of the path network (e.g. across a street) are joined by links of up to ${GAP} m. Parallel paths closer than 3 m are merged into one, and clusters of junctions closer than 6 m into one junction. Dead ends within 25 m of each other inside the park (plazas and clearings not mapped in OSM) are joined. Fetched parks are cached in the browser. “Load ready” takes the park from the site's library (already corrected, no OSM download), and “Save GeoJSON” saves the corrected network.`);
 }
 
 I18N.onChange(() => {

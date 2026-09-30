@@ -30,6 +30,11 @@ Symulacja zatrzymuje się po 10 000 cyklach; w cyklu 9999 wyniki są dopisywane 
     Sieć z OSM/GeoJSON jest też upraszczana (`simplify_roads`, `OSM_SIMPLIFY`): ścieżki równoległe bliżej niż 3 m łączą się w jedną,
     a skupiska skrzyżowań bliżej niż 6 m w jedno skrzyżowanie. Ślepe końce do 25 m od siebie wewnątrz parku (place, polany
     nieoznaczone w OSM) łączy `link_dead_ends`. `bush_setback_scope = all` liczy odsunięcie krzewów od każdego skrzyżowania.
+    `--fetch-osm` i przycisk „Zapisz GeoJSON” zapisują sieć już po tych poprawkach (WGS84, warstwy `roads`/`obstacles`/`boundary`,
+    znacznik `psm_processed` z punktem rzutu); taki plik wczytuje się bez drugiej obróbki. `--process PLIK --out WYNIK` poprawia
+    wcześniej zapisany surowy plik.
+  - `web/parki/` – gotowe parki Wrocławia po poprawkach (Staszica, Szczytnicki, Południowy, Grabiszyński, Zachodni; OSM, ODbL,
+    pobrane 2026-09-28). W aplikacji: „Wczytaj gotowy”, bez pobierania z Overpass. Te same pliki są w repozytorium SIPD.
 - `web/index.html` – uruchamia `psm.py` w przeglądarce (Pyodide): mapa parku z pamięcią strachu na ścieżkach,
   strefy Halla phantoma, wykres adrenaliny, kortyzolu i czujności, batch, testy i pobieranie CSV.
   Otwórz przez serwer HTTP uruchomiony w głównym katalogu repozytorium: `python -m http.server`, potem `http://localhost:8000/web/` (strona wczytuje `../src/psm.py`).

@@ -1,0 +1,40 @@
+{
+ "source": "OpenStreetMap (© OpenStreetMap contributors, ODbL), Overpass API, pobrane 2026-09-28",
+ "parks": [
+  {
+   "file": "park_staszica.geojson",
+   "name": "Park Staszica",
+   "junctions": 36,
+   "length_m": 2208,
+   "obstacles": 5
+  },
+  {
+   "file": "park_szczytnicki.geojson",
+   "name": "Park Szczytnicki",
+   "junctions": 394,
+   "length_m": 32250,
+   "obstacles": 91
+  },
+  {
+   "file": "park_poludniowy.geojson",
+   "name": "Park Południowy",
+   "junctions": 132,
+   "length_m": 8432,
+   "obstacles": 11
+  },
+  {
+   "file": "park_grabiszynski.geojson",
+   "name": "Park Grabiszyński",
+   "junctions": 185,
+   "length_m": 18089,
+   "obstacles": 21
+  },
+  {
+   "file": "park_zachodni.geojson",
+   "name": "Park Zachodni",
+   "junctions": 384,
+   "length_m": 29403,
+   "obstacles": 13
+  }
+ ]
+}

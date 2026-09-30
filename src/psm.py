@@ -304,13 +304,18 @@ def looks_geographic(points):
             and max(xs) - min(xs) < 2.0 and max(ys) - min(ys) < 2.0)
 
 
-def project_lonlat(features):
-    """Rzut lokalny równoodległościowy: stopnie -> metry (y na północ)."""
+def lonlat_origin(features):
+    """Środek rzutu: średnia wszystkich punktów (stopnie)."""
     pts = [p for _k, parts in features for part in parts for p in part]
-    if not pts:
+    return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)) if pts else None
+
+
+def project_lonlat(features, origin=None):
+    """Rzut lokalny równoodległościowy: stopnie -> metry (y na północ)."""
+    origin = origin or lonlat_origin(features)
+    if not origin:
         return features
-    lon0 = sum(p[0] for p in pts) / len(pts)
-    lat0 = sum(p[1] for p in pts) / len(pts)
+    lon0, lat0 = origin
     kx = 6371008.8 * math.pi / 180.0 * math.cos(math.radians(lat0))
     ky = 6371008.8 * math.pi / 180.0
     return [(k, [[((x - lon0) * kx, (y - lat0) * ky) for x, y in part] for part in parts]) for k, parts in features]
@@ -467,6 +472,34 @@ def features_to_geojson(features):
             out.append({"type": "Feature", "properties": {"layer": kind},
                         "geometry": {"type": "Polygon", "coordinates": [[list(p) for p in r] for r in parts]}})
     return {"type": "FeatureCollection", "features": out}
+
+
+PROCESSED_MARK = "psm_processed"   # znacznik GeoJSON z siecią już po poprawkach (bez ponownej obróbki)
+
+
+def unproject_lonlat(origin):
+    """Odwrotność project_lonlat: metry -> [lon, lat] (7 miejsc, ok. 1 cm)."""
+    lon0, lat0 = origin
+    kx = 6371008.8 * math.pi / 180.0 * math.cos(math.radians(lat0))
+    ky = 6371008.8 * math.pi / 180.0
+    return lambda q: (round(lon0 + q[0] / kx, 7), round(lat0 + q[1] / ky, 7))
+
+
+def processed_geojson(roads, obstacles, boundary, origin, info=None):
+    """Sieć po poprawkach (metry) -> GeoJSON w WGS84 z warstwami roads/obstacles/boundary.
+
+    Znacznik PROCESSED_MARK (z punktem rzutu) sprawia, że load_inputs nie poprawia sieci drugi raz,
+    a inne programy (np. SIPD) wiedzą, że łączenie kawałków, upraszczanie i ślepe końce są już zrobione."""
+    ll = unproject_lonlat(origin)
+    feats = [("roads", [[ll(q) for q in r]]) for r in roads]
+    feats += [("obstacles", [[ll(q) for q in ring] for ring in parts]) for parts in obstacles]
+    feats += [("boundary", [[ll(q) for q in ring]]) for ring in boundary]
+    fc = features_to_geojson(feats)
+    mark = {"version": 1, "origin": [round(origin[0], 9), round(origin[1], 9)], "bridge_gap_m": OSM_BRIDGE_GAP,
+            "parallel_m": 3.0, "junction_m": 6.0, "dead_end_gap_m": 25.0}
+    mark.update({k: v for k, v in (info or {}).items() if k not in ("origin", "processed") and isinstance(v, (int, float))})
+    fc[PROCESSED_MARK] = mark
+    return fc
 
 
 def fetch_osm(park_name, city="Wrocław"):
@@ -1855,6 +1888,7 @@ def load_inputs(roads_data=None, obstacles_data=None, roads_name="", obstacles_n
     i GeoJSON (zwykle wyeksportowanych z OSM), 0 dla SHP (schematy A/B mają zostać jak w GAMA)."""
     roads, obstacles, boundary = [], [], []
     is_osm = []
+    marks = []
 
     def feats_of(data, name):
         if name.lower().endswith(".shp"):
@@ -1862,6 +1896,8 @@ def load_inputs(roads_data=None, obstacles_data=None, roads_name="", obstacles_n
                     for k, parts in read_shp(bytes(data))]
         text = data.decode("utf-8") if isinstance(data, (bytes, bytearray)) else data
         obj = json.loads(text)
+        if obj.get(PROCESSED_MARK):
+            marks.append(obj[PROCESSED_MARK])
         if obj.get("elements") is not None:
             is_osm.append(True)
             return osm_to_features(obj)
@@ -1879,13 +1915,22 @@ def load_inputs(roads_data=None, obstacles_data=None, roads_name="", obstacles_n
                     feats.append(("obstacles", [part + part[::-1][1:]]))
             elif k != "point":
                 feats.append(("obstacles", parts))
+    origin = None
     if feats and looks_geographic([p for _k, parts in feats for part in parts for p in part]):
-        feats = project_lonlat(feats)
+        # plik po poprawkach: ten sam punkt rzutu co przy jego zapisie
+        origin = tuple(marks[0]["origin"]) if marks and marks[0].get("origin") else lonlat_origin(feats)
+        feats = project_lonlat(feats, origin)
     roads, obstacles, boundary = split_layers(feats)
     if not roads:
         raise ValueError("w danych nie ma ścieżek (linii)")
-    gap = (OSM_BRIDGE_GAP if is_osm else 0.0) if bridge_gap is None else bridge_gap
     LOAD_INFO.clear()
+    LOAD_INFO["origin"] = origin
+    if marks:
+        # sieć już poprawiona (processed_geojson): druga obróbka zmieniłaby ją
+        LOAD_INFO["processed"] = True
+        LOAD_INFO["parts_before"] = LOAD_INFO["parts_after"] = len(set(_road_components(roads)))
+        return roads, obstacles, boundary
+    gap = (OSM_BRIDGE_GAP if is_osm else 0.0) if bridge_gap is None else bridge_gap
     LOAD_INFO["parts_before"] = len(set(_road_components(roads)))
     if gap > 0 and LOAD_INFO["parts_before"] > 1:
         roads, LOAD_INFO["bridges"] = bridge_gaps(roads, gap)
@@ -2395,6 +2440,25 @@ def test_geojson_bridged_but_shp_distance_kept():
     assert LOAD_INFO["parts_after"] == 2
 
 
+def test_processed_geojson_roundtrip_skips_second_pass():
+    # dwa kawałki sieci 40 m od siebie + zdublowana ścieżka 1 m obok (stopnie, okolice Wrocławia)
+    d = 1.0 / 111195.0
+    line = lambda pts: {"type": "Feature", "properties": {"layer": "roads"}, "geometry": {
+        "type": "LineString", "coordinates": [[17.0 + x * d / 0.6293, 51.1 + y * d] for x, y in pts]}}
+    fc = {"type": "FeatureCollection", "features": [line([(0, 0), (100, 0)]), line([(0, 1), (100, 1)]),
+                                                     line([(100, 0), (100, 80)]), line([(140, 0), (240, 0)])]}
+    r1, o1, b1 = load_inputs(json.dumps(fc), None, "p.geojson")
+    info = dict(LOAD_INFO)
+    assert info["origin"] and info["parts_after"] == 1
+    out = processed_geojson(r1, o1, b1, info["origin"], info)
+    assert out[PROCESSED_MARK]["version"] == 1
+    assert {f["properties"]["layer"] for f in out["features"]} == {"roads"}
+    r2, _o, _b = load_inputs(json.dumps(out), None, "p.geojson")
+    assert LOAD_INFO.get("processed") and len(r2) == len(r1)
+    err = max(dist(p, q) for a, b in zip(r1, r2) for p, q in zip(a, b))
+    assert err < 0.05, err   # ta sama sieć (zaokrąglenie do 1e-7°)
+
+
 def test_simplify_merges_parallel_paths_and_junction_clusters():
     a = [(0.0, 0.0), (200.0, 0.0)]
     b = [(0.0, 3.0), (200.0, 3.0)]               # druga linia 3 m obok: ta sama alejka
@@ -2698,6 +2762,7 @@ def main(argv):
                     help="nasadzenia przy stałej powierzchni: odstęp od skrzyżowań × udział w narożnikach")
     ap.add_argument("--sensitivity", choices=["oat", "lhs"], help="analiza wrażliwości stałych modelu")
     ap.add_argument("--fetch-osm", metavar="NAZWA", help="pobierz park z OpenStreetMap (Overpass) i zapisz GeoJSON")
+    ap.add_argument("--process", metavar="PLIK", help="zapisz GeoJSON/Overpass po poprawkach sieci (--out)")
     ap.add_argument("--city", default="Wrocław")
     ap.add_argument("--out", default="park.geojson")
     ap.add_argument("--roads", help="plik ścieżek: .shp, .geojson albo odpowiedź Overpass .json")
@@ -2736,14 +2801,21 @@ def main(argv):
         print("%d/%d testów przeszło" % (len(res) - bad, len(res)))
         return 1 if bad else 0
 
-    if a.fetch_osm:
-        osm = fetch_osm(a.fetch_osm, a.city)
-        feats = osm_to_features(osm)
+    if a.fetch_osm or a.process:
+        if a.fetch_osm:
+            data, name = json.dumps(fetch_osm(a.fetch_osm, a.city)), "osm.json"
+        else:
+            with open(a.process, "rb") as f:
+                data, name = f.read(), a.process
+        # zapis po poprawkach (łączenie kawałków, uproszczenie, ślepe końce), jak w aplikacji
+        roads, obstacles, boundary = load_inputs(data, None, name)
+        if LOAD_INFO.get("origin") is None:
+            raise SystemExit("plik nie jest w stopniach (WGS84) – nie da się zapisać GeoJSON po poprawkach")
         with open(a.out, "w", encoding="utf-8") as f:
-            json.dump(features_to_geojson(feats), f)
-        roads, _o, _b = split_layers(feats)
-        print("zapisano %s: %d odcinków ścieżek, %d przeszkód" % (a.out, len(roads),
-                                                               sum(1 for k, _ in feats if k == "obstacles")))
+            json.dump(processed_geojson(roads, obstacles, boundary, LOAD_INFO["origin"], LOAD_INFO), f,
+                      separators=(",", ":"))
+        print("zapisano %s (po poprawkach): %d odcinków ścieżek, %d przeszkód, %d skrzyżowań" %
+              (a.out, len(roads), len(obstacles), len(junctions(roads))))
         return 0
 
     inputs = load_files(a.roads, a.obstacles) if a.roads else None

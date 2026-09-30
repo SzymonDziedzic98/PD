@@ -107,6 +107,7 @@ const I18N_EN = {
  "np. Park Tołpy": "e.g. Park Tołpy",
  "Pobierz z OSM": "Fetch from OSM",
  "Zapisz GeoJSON": "Save GeoJSON",
+ "Wczytaj gotowy": "Load ready",
  "Ścieżki (np. Staszica_SHP_sciezki_01.shp)": "Paths (e.g. Staszica_SHP_sciezki_01.shp)",
  "Przeszkody (np. Staszica_SHP_krzaki_09.shp)": "Obstacles (e.g. Staszica_SHP_krzaki_09.shp)",
  "Z shapefile wystarczy plik <code>.shp</code>; współrzędne powinny być w metrach (np. EPSG:2180). GeoJSON w stopniach jest rzutowany automatycznie.": "A shapefile needs only the <code>.shp</code> file; coordinates should be in metres (e.g. EPSG:2180). GeoJSON in degrees is projected automatically.",

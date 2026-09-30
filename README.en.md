@@ -45,7 +45,7 @@ A design variant drawn in QGIS or CAD can be loaded as GeoJSON or as ESRI Shapef
 - Coordinates may be in metres (any projected system, for example EPSG:2180) or in degrees (WGS 84). Degrees are detected automatically and projected locally to metres.
 - Paths must meet at shared vertices to form junctions. Disconnected parts of a GeoJSON network are joined by short links up to 50 m (`OSM_BRIDGE_GAP`). Parallel paths closer than 3 m and junction clusters within 6 m are merged, and dead ends less than 25 m apart inside the park are joined. Shapefiles are loaded as drawn. Agents are placed on the largest connected part of the network.
 
-In the browser the same files are chosen in the "Park" panel, and parks from OpenStreetMap can be downloaded by name.
+In the browser the same files are chosen in the "Park" panel, and parks from OpenStreetMap can be downloaded by name. "Load ready" takes one of five Wrocław parks from `web/parki/` (already corrected, © OpenStreetMap contributors, ODbL, downloaded 2026-09-28), with no Overpass download. `--fetch-osm` and "Save GeoJSON" write the corrected network (WGS 84, layers `roads`/`obstacles`/`boundary`, marker `psm_processed` with the projection origin), which loads without a second correction pass. `--process FILE --out OUT` corrects an earlier raw file.
 
 ## Planting variants
 
