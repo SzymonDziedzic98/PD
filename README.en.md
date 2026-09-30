@@ -14,7 +14,7 @@ The intended use is to compare design variants of one park before construction, 
 
 ## Quick start
 
-In the browser: open the GitHub Pages site of this repository (`https://szymondziedzic98.github.io/PD/`). The switch in the header changes the interface between Polish and English, and `?lang=en` in the address forces English.
+In the browser: open the GitHub Pages site of this repository (`https://szymondziedzic98.github.io/psm-web/`). The switch in the header changes the interface between Polish and English, and `?lang=en` in the address forces English.
 
 Locally, start a web server in the repository root and open the `web/` folder:
 
