@@ -50,14 +50,14 @@ def park_stats(path):
     return len(psm.junctions(roads)), sum(psm.polyline_length(r) for r in roads)
 
 
-def plan(paths, reps, mults=MULTS, bots_per_m=REF_BOTS_PER_M):
+def plan(paths, reps, mults=MULTS, bots_per_m=REF_BOTS_PER_M, setbacks=None):
     jobs = []
     for path in paths:
         nj, length = park_stats(path)
         bots = max(1, round(bots_per_m * length))
         for mult in mults:
             for form in ue.FORMS:
-                for sb in ue.SETBACKS + [None]:
+                for sb in (ue.SETBACKS if setbacks is None else setbacks) + [None]:
                     for r in range(reps):
                         o = ue.cell(sb, form, bots, {"planting_seed": 1 + r, "bush_area_total": REF_DENSITY * nj * mult,
                                                      "phantom_nb": PHANTOMS, "fear_scope": "individual",
@@ -96,8 +96,8 @@ def summarize(rows):
     return sorted(out, key=lambda r: (r["park"], float(r["mult"]), r["bush_form"], r["label"]))
 
 
-def thresholds(rows):
-    return ue.thresholds(rows, group_keys=("park", "mult", "bush_form"))
+def thresholds(rows, setbacks=None):
+    return ue.thresholds(rows, group_keys=("park", "mult", "bush_form"), setbacks=setbacks or ue.SETBACKS)
 
 
 def main(argv):
@@ -107,12 +107,13 @@ def main(argv):
     ap.add_argument("--cycles", type=int, default=10000)
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
     ap.add_argument("--out", default="wyniki_parki")
+    ap.add_argument("--setbacks", type=float, nargs="+", help="tylko te odsunięcia (plus kontrola)")
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
     all_rows = []
     for path in a.parks:   # park po parku, żeby wyniki mniejszych parków były gotowe wcześniej
         t0 = time.time()
-        jobs = plan([path], a.reps)
+        jobs = plan([path], a.reps, setbacks=a.setbacks)
         rows = []
         with Pool(a.jobs) as pool:
             for i, rs in enumerate(pool.imap_unordered(_run, [(j, a.cycles) for j in jobs]), 1):
@@ -122,7 +123,7 @@ def main(argv):
         all_rows.extend(rows)
         ue.write(os.path.join(a.out, "parki_runs.csv"), all_rows)
         ue.write(os.path.join(a.out, "parki_summary.csv"), summarize(all_rows))
-        ue.write(os.path.join(a.out, "parki_threshold.csv"), thresholds(all_rows))
+        ue.write(os.path.join(a.out, "parki_threshold.csv"), thresholds(all_rows, a.setbacks))
     return 0
 
 
