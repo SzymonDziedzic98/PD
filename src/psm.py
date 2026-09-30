@@ -496,7 +496,8 @@ def processed_geojson(roads, obstacles, boundary, origin, info=None):
     feats += [("boundary", [[ll(q) for q in ring]]) for ring in boundary]
     fc = features_to_geojson(feats)
     mark = {"version": 1, "origin": [round(origin[0], 9), round(origin[1], 9)], "bridge_gap_m": OSM_BRIDGE_GAP,
-            "parallel_m": 3.0, "junction_m": 6.0, "dead_end_gap_m": 25.0}
+            "parallel_m": 3.0, "junction_m": 6.0, "dead_end_gap_m": 25.0,
+            "dead_end_prune_m": OSM_PRUNE_DEAD_END}
     mark.update({k: v for k, v in (info or {}).items() if k not in ("origin", "processed") and isinstance(v, (int, float))})
     fc[PROCESSED_MARK] = mark
     return fc
@@ -718,6 +719,45 @@ def link_dead_ends(roads, boundary=(), gap=25.0, margin=8.0):
             roads.append([q, c])
         linked += len(g)
     return roads, linked
+
+
+def prune_dead_ends(roads, max_len=15.0, snap=1e-3):
+    """Odcina ślepe odnogi dłuższe niż `max_len` m.
+
+    Odnoga to łańcuch polilinii od ślepego końca (węzeł stopnia 1) przez węzły stopnia 2 do pierwszego skrzyżowania
+    (stopień >= 3). Odnogi dłuższe niż `max_len` znikają w całości, krótsze zostają. Powtarza do skutku: po odcięciu
+    liści drzewko ślepych ścieżek może stać się jedną dłuższą odnogą. Osobne składowe bez skrzyżowania zostają.
+    Zwraca (polilinie, liczba odciętych odnóg, ich łączna długość w m)."""
+    roads = [list(r) for r in roads]
+    key = lambda q: (round(q[0] / snap), round(q[1] / snap))
+    n_cut, len_cut = 0, 0.0
+    while True:
+        ends = {}
+        for i, r in enumerate(roads):
+            for q in (r[0], r[-1]):
+                ends.setdefault(key(q), []).append(i)
+        drop = set()
+        for k, idx in ends.items():
+            if len(idx) != 1 or idx[0] in drop:
+                continue
+            chain, node, length = [], k, 0.0
+            i = idx[0]
+            while True:
+                chain.append(i)
+                length += polyline_length(roads[i])
+                r = roads[i]
+                node = key(r[-1]) if key(r[0]) == node else key(r[0])
+                nxt = [j for j in ends[node] if j != i]
+                if len(ends[node]) != 2 or not nxt or nxt[0] in chain:
+                    break
+                i = nxt[0]
+            if len(ends[node]) >= 3 and length > max_len:
+                drop.update(chain)
+                n_cut += 1
+                len_cut += length
+        if not drop:
+            return roads, n_cut, round(len_cut, 1)
+        roads = [r for i, r in enumerate(roads) if i not in drop]
 
 
 def simplify_roads(roads, parallel=3.0, junction=6.0, step=1.0, min_spur=3.0):
@@ -1877,6 +1917,7 @@ class Model:
 
 OSM_BRIDGE_GAP = 50.0   # m; np. szeroka ulica rozdzielająca dwie części parku
 OSM_SIMPLIFY = True     # łączenie zdublowanych ścieżek i węzłów (simplify_roads) oraz ślepych końców (link_dead_ends)
+OSM_PRUNE_DEAD_END = 15.0   # m; ślepe odnogi dłuższe niż tyle są odcinane (prune_dead_ends); 0 = bez odcinania
 LOAD_INFO = {}
 
 
@@ -1939,6 +1980,8 @@ def load_inputs(roads_data=None, obstacles_data=None, roads_name="", obstacles_n
         roads, info = simplify_roads(roads)
         LOAD_INFO.update(info)
         roads, LOAD_INFO["dead_ends_linked"] = link_dead_ends(roads, boundary)
+        if OSM_PRUNE_DEAD_END > 0:
+            roads, LOAD_INFO["dead_ends_cut"], LOAD_INFO["dead_ends_cut_m"] = prune_dead_ends(roads, OSM_PRUNE_DEAD_END)
         LOAD_INFO["parts_after"] = len(set(_road_components(roads)))
     return roads, obstacles, boundary
 
@@ -2373,6 +2416,16 @@ def test_shp_roundtrip():
 
 
 def test_osm_conversion_splits_at_junctions():
+    # sieci testowe to drzewa z długimi odnogami; odcinanie ślepych odnóg ma osobny test
+    global OSM_PRUNE_DEAD_END
+    saved, OSM_PRUNE_DEAD_END = OSM_PRUNE_DEAD_END, 0.0
+    try:
+        _test_osm_conversion_splits_at_junctions()
+    finally:
+        OSM_PRUNE_DEAD_END = saved
+
+
+def _test_osm_conversion_splits_at_junctions():
     g = lambda lon, lat: {"lon": lon, "lat": lat}
     osm = {"elements": [
         {"type": "way", "id": 1, "tags": {"highway": "footway"}, "nodes": [1, 2, 3],
@@ -2395,6 +2448,25 @@ def test_osm_conversion_splits_at_junctions():
     gj = features_to_geojson(osm_to_features(osm))
     back = load_inputs(json.dumps(gj), None, "park.geojson")
     assert len(back[0]) == 3 and len(back[1]) == 1
+
+
+def test_prune_dead_ends_cuts_long_spurs_only():
+    # pętla z trzema odnogami: 20 m (odcięta), 10 m (zostaje) i drzewko 2 × 12 m + 8 m (po odcięciu liści nic,
+    # bo liście < 15 m, więc drzewko zostaje)
+    loop = [[(0.0, 0.0), (50.0, 0.0)], [(50.0, 0.0), (50.0, 50.0)], [(50.0, 50.0), (0.0, 50.0)], [(0.0, 50.0), (0.0, 0.0)]]
+    long_spur = [[(50.0, 0.0), (60.0, 0.0)], [(60.0, 0.0), (70.0, 0.0)]]      # 20 m z węzłem stopnia 2 w środku
+    short_spur = [[(0.0, 0.0), (-10.0, 0.0)]]
+    tree = [[(50.0, 50.0), (50.0, 58.0)], [(50.0, 58.0), (40.0, 65.0)], [(50.0, 58.0), (60.0, 65.0)]]
+    roads, n, m = prune_dead_ends(loop + long_spur + short_spur + tree, 15.0)
+    assert n == 1 and abs(m - 20.0) < 1e-6, (n, m)
+    assert len(roads) == len(loop) + 1 + 3
+    # drzewko z długimi liśćmi: najpierw liście (2 × 20 m), potem pień 8 m staje się odnogą < 15 m i zostaje
+    tree2 = [[(50.0, 50.0), (50.0, 58.0)], [(50.0, 58.0), (50.0, 78.0)], [(50.0, 58.0), (70.0, 58.0)]]
+    roads, n, m = prune_dead_ends(loop + tree2, 15.0)
+    assert n == 2 and len(roads) == len(loop) + 1, (n, len(roads))
+    # osobny odcinek bez skrzyżowania zostaje
+    roads, n, _m = prune_dead_ends(loop + [[(200.0, 0.0), (300.0, 0.0)]], 15.0)
+    assert n == 0 and len(roads) == len(loop) + 1
 
 
 def test_link_dead_ends_joins_close_ends_inside_park():
@@ -2441,6 +2513,16 @@ def test_geojson_bridged_but_shp_distance_kept():
 
 
 def test_processed_geojson_roundtrip_skips_second_pass():
+    # sieci testowe to drzewa z długimi odnogami; odcinanie ślepych odnóg ma osobny test
+    global OSM_PRUNE_DEAD_END
+    saved, OSM_PRUNE_DEAD_END = OSM_PRUNE_DEAD_END, 0.0
+    try:
+        _test_processed_geojson_roundtrip_skips_second_pass()
+    finally:
+        OSM_PRUNE_DEAD_END = saved
+
+
+def _test_processed_geojson_roundtrip_skips_second_pass():
     # dwa kawałki sieci 40 m od siebie + zdublowana ścieżka 1 m obok (stopnie, okolice Wrocławia)
     d = 1.0 / 111195.0
     line = lambda pts: {"type": "Feature", "properties": {"layer": "roads"}, "geometry": {
@@ -2495,6 +2577,16 @@ def test_assemble_rings_from_fragments():
 
 
 def test_osm_relation_obstacle_and_bridging():
+    # sieci testowe to drzewa z długimi odnogami; odcinanie ślepych odnóg ma osobny test
+    global OSM_PRUNE_DEAD_END
+    saved, OSM_PRUNE_DEAD_END = OSM_PRUNE_DEAD_END, 0.0
+    try:
+        _test_osm_relation_obstacle_and_bridging()
+    finally:
+        OSM_PRUNE_DEAD_END = saved
+
+
+def _test_osm_relation_obstacle_and_bridging():
     lat0, m = 51.1, 1.0 / 111320.0
     g = lambda x, y: {"lon": 17.0 + x * m / 0.628, "lat": lat0 + y * m}
     osm = {"elements": [

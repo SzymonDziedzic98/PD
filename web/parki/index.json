@@ -4,36 +4,36 @@
   {
    "file": "park_staszica.geojson",
    "name": "Park Staszica",
-   "junctions": 36,
-   "length_m": 2208,
+   "junctions": 33,
+   "length_m": 2080,
    "obstacles": 5
   },
   {
    "file": "park_szczytnicki.geojson",
    "name": "Park Szczytnicki",
-   "junctions": 394,
-   "length_m": 32250,
+   "junctions": 357,
+   "length_m": 29099,
    "obstacles": 91
   },
   {
    "file": "park_poludniowy.geojson",
    "name": "Park Południowy",
-   "junctions": 132,
-   "length_m": 8432,
+   "junctions": 116,
+   "length_m": 7264,
    "obstacles": 11
   },
   {
    "file": "park_grabiszynski.geojson",
    "name": "Park Grabiszyński",
-   "junctions": 185,
-   "length_m": 18089,
+   "junctions": 168,
+   "length_m": 14720,
    "obstacles": 21
   },
   {
    "file": "park_zachodni.geojson",
    "name": "Park Zachodni",
-   "junctions": 384,
-   "length_m": 29403,
+   "junctions": 364,
+   "length_m": 26898,
    "obstacles": 13
   }
  ]
