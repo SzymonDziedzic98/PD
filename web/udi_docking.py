@@ -8,7 +8,8 @@ Scenariusze (pliki SHP Parku Staszica ze schematów A/B nie są dostępne, więc
   E1_awersja_plain  jak E1_awersja, ale boty na grafie bez wag strachu (ustawienie z wyników artykułu)
   S1_krzewy_10ph    układ S1_krzewy, awersja β = 5, 10 phantomów z osobną pamięcią strachu, boty bez wag (jak Study 3)
 Wspólne: 50 botów, 10 000 cykli po 0,3 s, strefy Halla ×4. Trzy pierwsze scenariusze: 1 phantom, boty na grafie ważonym
-i wspólna pamięć strachu (dawne zachowanie GAML, w kopii modelu bots_plain_graph = false). Przy kilku phantomach
+i wspólna pamięć strachu (dawne zachowanie GAML: w kopii modelu bots_plain_graph = false, move_by_length = false).
+Nowe scenariusze: move_by_length = true (prędkość po długości, wagi strachu tylko do trasy). Przy kilku phantomach
 porównanie idzie po średniej z phantomów w przebiegu (phantomy w jednym przebiegu dzielą boty, więc nie są niezależne).
 
     python udi_docking.py export --out DIR          # SHP + kopie modelu GAMA + plan XML
@@ -45,9 +46,9 @@ OFFSET = (360000.0, 360000.0)
 COMMON = {"phantom_nb": 1, "bot_nb": BOTS, "bot_graph": "weighted", "fear_scope": "shared", "planting": "default"}
 
 SCENARIOS = {
-    "S1_krzewy": {"aversion_strength": 0.0},
-    "S1_kontrola": {"aversion_strength": 0.0},
-    "E1_awersja": {"aversion_strength": 5.0},
+    "S1_krzewy": {"aversion_strength": 0.0, "move_by_length": False},
+    "S1_kontrola": {"aversion_strength": 0.0, "move_by_length": False},
+    "E1_awersja": {"aversion_strength": 5.0, "move_by_length": False},
     # po zmianie GAML (boty bez wag strachu, osobna pamięć phantomów): ustawienia z wyników artykułu
     "E1_awersja_plain": {"aversion_strength": 5.0, "bot_graph": "plain", "layout": "E1_awersja"},
     "S1_krzewy_10ph": {"aversion_strength": 5.0, "bot_graph": "plain", "fear_scope": "individual", "phantom_nb": 10,
@@ -89,7 +90,8 @@ def write_shp(base, roads, polys):
             f.write(PRJ)
 
 
-def gaml_copy(src, dst, roads_shp, obst_shp, aversion, bots, bot_graph="weighted", fear_scope="shared", phantoms=1):
+def gaml_copy(src, dst, roads_shp, obst_shp, aversion, bots, bot_graph="weighted", fear_scope="shared", phantoms=1,
+              move_by_length=True):
     s = open(src, encoding="utf-8").read()
     s = s.replace('"Staszica_SHP_sciezki_01.shp"', '"%s"' % roads_shp)
     s = s.replace('"Staszica_SHP_krzaki_09.shp"', '"%s"' % obst_shp)
@@ -98,6 +100,7 @@ def gaml_copy(src, dst, roads_shp, obst_shp, aversion, bots, bot_graph="weighted
     s = re.sub(r"int phantom_nb <- [0-9]+;", "int phantom_nb <- %d;" % phantoms, s)
     s = re.sub(r"bool bots_plain_graph <- \w+;", "bool bots_plain_graph <- %s;" % str(bot_graph == "plain").lower(), s)
     s = re.sub(r"bool individual_fear <- \w+;", "bool individual_fear <- %s;" % str(fear_scope == "individual").lower(), s)
+    s = re.sub(r"bool move_by_length <- \w+;", "bool move_by_length <- %s;" % str(move_by_length).lower(), s)
     open(dst, "w", encoding="utf-8").write(s)
 
 
@@ -120,7 +123,8 @@ def export(out, reps, names=None):
         write_shp(os.path.join(d, name), roads, polys)
         model = os.path.join(d, "Hall_AC_%s.gaml" % name)
         gaml_copy(GAML, model, name + "_sciezki.shp", name + "_krzaki.shp", extra["aversion_strength"], BOTS,
-                  extra.get("bot_graph", "weighted"), extra.get("fear_scope", "shared"), extra.get("phantom_nb", 1))
+                  extra.get("bot_graph", "weighted"), extra.get("fear_scope", "shared"), extra.get("phantom_nb", 1),
+                  extra.get("move_by_length", True))
         with open(os.path.join(d, "plan.xml"), "w") as f:
             f.write(plan_xml(model, reps))
         rows.append({"scenario": name, "edges": len(roads), "bushes": len(polys),
@@ -141,7 +145,7 @@ def _py_run(job):
     with open(os.path.join(d, name + "_krzaki.shp"), "rb") as f:
         od = f.read()
     inputs = psm.load_inputs(rd, od, "r.shp", "o.shp")
-    params = dict(COMMON, **{k: v for k, v in SCENARIOS[name].items() if k != "layout"})
+    params = dict(COMMON, **{k: v for k, v in SCENARIOS[name].items() if k not in ("layout", "move_by_length")})
     m = psm.make_model(params, seed, CYCLES, None, inputs).run()
     return [{"scenario": name, "impl": "python", "seed": seed, "phantom": i,
              "total_adrenaline": round(ph.total_adrenaline, 4), "total_cortisol": round(ph.total_cortisol, 4),

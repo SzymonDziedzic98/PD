@@ -48,6 +48,12 @@ global {
 	// Pamięć strachu: false = wspólna na odcinku dla wszystkich phantomów, true = osobna dla każdego phantoma.
 	// Przy jednym phantomie oba warianty dają to samo.
 	bool individual_fear <- false;
+	// goto w GAMA traktuje wagi grafu także jako koszt RUCHU: na odcinku o wadze 10 × długość agent idzie 10× wolniej.
+	// Przy awersji phantom zwalniał więc na odcinkach, na których się bał, zostawał w pobliżu źródła strachu i odkładał
+	// kolejny strach (sprzężenie zwrotne; część phantomów prawie stawała). true = ruch z prędkością liczoną po długości,
+	// wagi strachu służą tylko do wyboru trasy (jak w porcie Pythona). false = dawne zachowanie.
+	bool move_by_length <- true;
+	map<road, float> length_weights;
 
 	reflex stop_after_steps {
         if (cycle >= 10000) {
@@ -84,6 +90,7 @@ global {
 		// weights: dla każdej krawędzi (road) waga = długość * (1 + aversion_strength * fear_memory).
 		// Przy fear_memory = 0 wszędzie -> waga = długość -> identyczny routing jak w oryginale.
 		bot_network <- as_edge_graph(road);
+		length_weights <- road as_map (each::each.shape.perimeter);
 		do rebuild_graph;
 		// <<< FEEDBACK
     }
@@ -144,7 +151,11 @@ species bot skills: [moving] {
 			target <- any_location_in(one_of(road));
 		}
 		else {
-			do goto target: target on: (bots_plain_graph ? bot_network : road_network);
+			if (move_by_length) {
+				do goto target: target on: (bots_plain_graph ? bot_network : road_network) move_weights: length_weights;
+			} else {
+				do goto target: target on: (bots_plain_graph ? bot_network : road_network);
+			}
 		}
 	}
 
@@ -254,7 +265,11 @@ species phantom skills: [moving] {
 			target <- any_location_in(one_of(road));
 		}
 		else {
-			do goto target: target on: (individual_fear ? my_network : road_network);
+			if (move_by_length) {
+				do goto target: target on: (individual_fear ? my_network : road_network) move_weights: length_weights;
+			} else {
+				do goto target: target on: (individual_fear ? my_network : road_network);
+			}
 		}
 	}
 	// <<< FEEDBACK
@@ -299,6 +314,7 @@ experiment Hall  type: gui {
 	parameter "Zanikanie strachu" var: fear_decay;
 	parameter "Boty na grafie bez wag strachu" var: bots_plain_graph;
 	parameter "Osobna pamięć strachu phantomów" var: individual_fear;
+	parameter "Prędkość po długości (wagi tylko do trasy)" var: move_by_length;
 	// <<< FEEDBACK
 
     output {
