@@ -3,8 +3,8 @@ message: "If you use this software, please cite it as below."
 title: "PSM: Proxemic Stress Model with route aversion (GAMA model, Python port and browser app)"
 type: software
 license: MIT
-repository-code: "https://github.com/SzymonDziedzic98/PD"
-url: "https://szymondziedzic98.github.io/PD/"
+repository-code: "https://github.com/SzymonDziedzic98/psm-web"
+url: "https://szymondziedzic98.github.io/psm-web/"
 authors:
   - family-names: Dziedzic
     given-names: Szymon
