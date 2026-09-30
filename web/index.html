@@ -340,8 +340,8 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
     </ul>
     <h3>Rozszerzenia (domyślnie wyłączone, wyniki jak w GAMA)</h3>
     <ul class="plain">
-      <li><b>Graf botów</b>: <code>plain</code> domyślnie (boty nie znają strachu phantoma, wybierają trasy po długości) albo <code>weighted</code> jak w GAMA (boty też omijają odcinki, na których phantom się bał).</li>
-      <li><b>Pamięć strachu</b>: <code>shared</code> jak w GAMA albo <code>individual</code> (każdy phantom wybiera trasę według własnej pamięci; przy jednym phantomie wyniki identyczne).</li>
+      <li><b>Graf botów</b>: <code>plain</code> domyślnie (boty nie znają strachu phantoma, wybierają trasy po długości) albo <code>weighted</code> (w GAMA <code>bots_plain_graph = false</code>; boty też omijają odcinki, na których phantom się bał).</li>
+      <li><b>Pamięć strachu</b>: <code>shared</code> albo <code>individual</code> (w GAMA <code>individual_fear</code>) (każdy phantom wybiera trasę według własnej pamięci; przy jednym phantomie wyniki identyczne).</li>
       <li><b>Nasadzenia sterowane</b>: krzewy o stałej łącznej powierzchni, część w narożnikach skrzyżowań (odstęp od węzła = zmienna projektowa), reszta wzdłuż ścieżek poza strefą skrzyżowania. Działa na każdej sieci, także OSM i SHP.</li>
       <li><b>Mapa stresu</b>: średnia adrenalina, suma czujności i epizody lęku phantoma na każdym odcinku.</li>
       <li><b>Izowisty</b>: pole widoczności (promień = strefa publiczna) co 5 m wzdłuż ścieżek i korelacja rang ze stresem na odcinkach.</li>
