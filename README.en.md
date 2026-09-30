@@ -56,6 +56,10 @@ python src/psm.py --planting-experiment --distances 0,5,10,15,20 --shares 1 --re
     --cycles 10000 --csv planting.csv --summary planting_means.csv
 ```
 
+## Example of the SoftwareX paper
+
+`python examples/example_two_variants.py` compares 1500 m² of shrub clumps at junction corners with the same clumps 20 m away (generated park, 50 bots, 10 runs each). It writes the run data and Fig. 3 of the paper to `examples/output/`. Expected totals of phantom adrenaline: 5157 ± 1696 at the junctions and 491 ± 43 at 20 m.
+
 ## Outputs
 
 - `--csv` of a single run: the GAMA `summary.csv` with `bot_nb`, `phantom_nb`, `total_adrenaline`, `total_cortisol`, `total_vigilance`.
