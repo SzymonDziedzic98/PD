@@ -101,3 +101,8 @@ Model wczytuje dwa shapefile, podane ścieżką względną do pliku `.gaml`, wi�
 - `Staszica_SHP_krzaki_09.shp` (przeszkody / krzaki)
 
 Każdy shapefile to komplet plików (`.shp`, `.shx`, `.dbf`, `.prj`, ...). **Nie są jeszcze w repozytorium.**
+
+## Licencja i cytowanie
+
+Kod jest udostępniony na licencji MIT (`LICENSE.txt`). Dane do cytowania są w `CITATION.cff`
+(GitHub pokazuje je jako „Cite this repository”).
