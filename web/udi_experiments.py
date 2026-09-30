@@ -77,11 +77,24 @@ def e1_plan(reps, visitors=VISITORS, networks=(1,), seed0=1, setbacks=SETBACKS, 
     return plan
 
 
-def e1h_plan(reps, seed0=1, setbacks=SETBACKS_H, mults=HALL_MULTS):
+def e1h_plan(reps, seed0=1, setbacks=SETBACKS_H, mults=HALL_MULTS, extra=None):
     plan = []
     for hm in mults:
-        plan += e1_plan(reps, visitors=[50], seed0=seed0, setbacks=setbacks, extra={"hall_multiplier": hm})
+        plan += e1_plan(reps, visitors=[50], seed0=seed0, setbacks=setbacks, extra=dict(extra or {}, hall_multiplier=hm))
     return plan
+
+
+def step_params(step_s, base_s=0.3):
+    """Parametry dla innego kroku czasu przy tych samych stałych czasowych: stałe „na cykl” (wygaszanie adrenaliny,
+    kortyzolu i pamięci strachu, przyrost kortyzolu, co ile cykli przeliczać graf) przeliczone z kroku 0,3 s."""
+    k = step_s / base_s
+    d = psm.DEFAULTS
+    return {"step_min": step_s / 60.0,
+            "adrenaline_cooldown": d["adrenaline_cooldown"] ** k,
+            "cortisol_cooldown": d["cortisol_cooldown"] ** k,
+            "fear_decay": d["fear_decay"] ** k,
+            "cortisol_gain": d["cortisol_gain"] * k,
+            "reweight_every": max(1, round(d["reweight_every"] / k))}
 
 
 E3_PARAMS = ["adrenaline_threshold", "adrenaline_cooldown", "cortisol_cooldown", "cortisol_gain", "hall_multiplier"]
@@ -249,6 +262,11 @@ def main(argv):
     ap.add_argument("--out", default="wyniki_PSM_UDI")
     ap.add_argument("--setbacks", type=float, nargs="+", help="e1h: tylko te odsunięcia, dopisane do e1h_runs.csv w --out")
     ap.add_argument("--hall", type=float, nargs="+", help="e1h: tylko te mnożniki stref")
+    ap.add_argument("--step-s", type=float, default=None,
+                    help="e1h: krok czasu w s (stałe na cykl i liczba cykli przeliczone z 0,3 s, zob. step_params)")
+    ap.add_argument("--prefix", default="e1h", help="e1h: przedrostek plików wyników")
+    ap.add_argument("--set", nargs="+", default=[], metavar="KLUCZ=WARTOŚĆ",
+                    help="e1h: dodatkowe opcje przebiegu, np. bush_radius=1.5 bush_path_offset=0.5")
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
     prog = lambda i, n: print("\r  %d/%d" % (i, n), end="", file=sys.stderr, flush=True)
@@ -260,7 +278,7 @@ def main(argv):
             rows = psm.run_plan(plan, a.cycles, BASE, None, prog, a.jobs)
             write(os.path.join(a.out, "e1_runs.csv"), rows)
             write(os.path.join(a.out, "e1_summary.csv"),
-                  summarize(rows, ["bot_nb", "bush_form", "label"], extra=["setback_real", "bush_area"]))
+                  summarize(rows, ["bot_nb", "bush_form", "label"], extra=["setback_real", "bush_area", "junction_share_real"]))
             write(os.path.join(a.out, "e1_threshold.csv"), thresholds(rows))
         elif which == "e1b":
             plan = e1_plan(a.reps or 5, visitors=[50], networks=range(2, 12))
@@ -281,12 +299,15 @@ def main(argv):
                                   "rho_area_adrenaline", "rho_area_vigilance", "rho_blocked_adrenaline"]))
         elif which == "e1h":
             sbs = a.setbacks or SETBACKS_H
-            plan = e1h_plan(a.reps or 30, setbacks=sbs, mults=a.hall or HALL_MULTS)
-            prev = os.path.join(a.out, "e1h_runs.csv")
+            extra = dict(step_params(a.step_s) if a.step_s else {},
+                         **{k: float(v) for k, v in (x.split("=", 1) for x in a.set)}) or None
+            cycles = round(a.cycles * 0.3 / a.step_s) if a.step_s else a.cycles   # ten sam czas symulowany
+            plan = e1h_plan(a.reps or 30, setbacks=sbs, mults=a.hall or HALL_MULTS, extra=extra)
+            prev = os.path.join(a.out, a.prefix + "_runs.csv")
             extend = bool(a.setbacks) and os.path.exists(prev)
             if extend:
                 plan = [x for x in plan if x[2] != "none"]
-            rows = psm.run_plan(plan, a.cycles, BASE, None, prog, a.jobs)
+            rows = psm.run_plan(plan, cycles, BASE, None, prog, a.jobs)
             if extend:
                 # dopisz nowe odsunięcia do wcześniejszych przebiegów (kontrola z tymi samymi seedami już tam jest)
                 with open(prev, encoding="utf-8") as f:
@@ -295,9 +316,9 @@ def main(argv):
             with open(prev, encoding="utf-8") as f:   # jednolite typy (tekst z CSV) dla starych i nowych wierszy
                 rows = list(csv.DictReader(f))
             sbs = sorted({float(r["label"]) for r in rows if r["label"] != "none"})
-            write(os.path.join(a.out, "e1h_summary.csv"),
-                  summarize(rows, ["hall_multiplier", "bush_form", "label"], extra=["setback_real"]))
-            write(os.path.join(a.out, "e1h_threshold.csv"),
+            write(os.path.join(a.out, a.prefix + "_summary.csv"),
+                  summarize(rows, ["hall_multiplier", "bush_form", "label"], extra=["setback_real", "bush_area", "junction_share_real"]))
+            write(os.path.join(a.out, a.prefix + "_threshold.csv"),
                   thresholds(rows, ("hall_multiplier", "bush_form"), setbacks=sbs))
         elif which == "e2r":
             rows = []
