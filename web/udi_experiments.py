@@ -265,6 +265,8 @@ def main(argv):
     ap.add_argument("--step-s", type=float, default=None,
                     help="e1h: krok czasu w s (stałe na cykl i liczba cykli przeliczone z 0,3 s, zob. step_params)")
     ap.add_argument("--prefix", default="e1h", help="e1h: przedrostek plików wyników")
+    ap.add_argument("--set", nargs="+", default=[], metavar="KLUCZ=WARTOŚĆ",
+                    help="e1h: dodatkowe opcje przebiegu, np. bush_radius=1.5 bush_path_offset=0.5")
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
     prog = lambda i, n: print("\r  %d/%d" % (i, n), end="", file=sys.stderr, flush=True)
@@ -276,7 +278,7 @@ def main(argv):
             rows = psm.run_plan(plan, a.cycles, BASE, None, prog, a.jobs)
             write(os.path.join(a.out, "e1_runs.csv"), rows)
             write(os.path.join(a.out, "e1_summary.csv"),
-                  summarize(rows, ["bot_nb", "bush_form", "label"], extra=["setback_real", "bush_area"]))
+                  summarize(rows, ["bot_nb", "bush_form", "label"], extra=["setback_real", "bush_area", "junction_share_real"]))
             write(os.path.join(a.out, "e1_threshold.csv"), thresholds(rows))
         elif which == "e1b":
             plan = e1_plan(a.reps or 5, visitors=[50], networks=range(2, 12))
@@ -297,7 +299,8 @@ def main(argv):
                                   "rho_area_adrenaline", "rho_area_vigilance", "rho_blocked_adrenaline"]))
         elif which == "e1h":
             sbs = a.setbacks or SETBACKS_H
-            extra = step_params(a.step_s) if a.step_s else None
+            extra = dict(step_params(a.step_s) if a.step_s else {},
+                         **{k: float(v) for k, v in (x.split("=", 1) for x in a.set)}) or None
             cycles = round(a.cycles * 0.3 / a.step_s) if a.step_s else a.cycles   # ten sam czas symulowany
             plan = e1h_plan(a.reps or 30, setbacks=sbs, mults=a.hall or HALL_MULTS, extra=extra)
             prev = os.path.join(a.out, a.prefix + "_runs.csv")
@@ -314,7 +317,7 @@ def main(argv):
                 rows = list(csv.DictReader(f))
             sbs = sorted({float(r["label"]) for r in rows if r["label"] != "none"})
             write(os.path.join(a.out, a.prefix + "_summary.csv"),
-                  summarize(rows, ["hall_multiplier", "bush_form", "label"], extra=["setback_real"]))
+                  summarize(rows, ["hall_multiplier", "bush_form", "label"], extra=["setback_real", "bush_area", "junction_share_real"]))
             write(os.path.join(a.out, a.prefix + "_threshold.csv"),
                   thresholds(rows, ("hall_multiplier", "bush_form"), setbacks=sbs))
         elif which == "e2r":
