@@ -76,9 +76,10 @@ DEFAULTS = {
     "park_height": 240.0,
     "park_bushes": 70,
     # --- rozszerzenia (wartości domyślne = zachowanie jak w GAMA) ---
-    # graf botów: "weighted" = ten sam ważony graf co phantom (jak w GAMA), "plain" = same długości
+    # graf botów: "weighted" = ten sam ważony graf co phantom (GAML: bots_plain_graph = false), "plain" = same długości
+    # (GAML: bots_plain_graph = true, domyślnie)
     "bot_graph": "plain",
-    # pamięć strachu: "shared" = na odcinku, wspólna (jak w GAMA), "individual" = osobna dla każdego phantoma
+    # pamięć strachu: "shared" = na odcinku, wspólna, "individual" = osobna dla każdego phantoma (GAML: individual_fear)
     "fear_scope": "shared",
     # nasadzenia: "default" = park generowany -> losowe krzewy, plik -> przeszkody z pliku;
     # "controlled" = sterowane nasadzenia przy stałej powierzchni; "none" = bez przeszkód
@@ -140,8 +141,8 @@ GUI_PARAMETERS = [
         ("reweight_every", "Przeliczanie grafu co (cykli)"),
     ]),
     ("Warianty mechaniki", [
-        ("bot_graph", "Graf botów (plain = boty nie znają strachu phantoma; weighted = jak GAMA)"),
-        ("fear_scope", "Pamięć strachu (shared = jak GAMA)"),
+        ("bot_graph", "Graf botów (plain = boty nie znają strachu phantoma; weighted = boty na grafie phantoma)"),
+        ("fear_scope", "Pamięć strachu (shared = wspólna, individual = osobna)"),
     ]),
     ("Nasadzenia", [
         ("planting", "Nasadzenia"),
@@ -1619,7 +1620,7 @@ class Mover:
             self.goto(model)
 
     def route_weights(self, model):
-        # bot: graf ważony jak w GAMA albo same długości (bot_graph = "plain")
+        # bot: graf ważony (bot_graph = "weighted") albo same długości (bot_graph = "plain", jak GAML domyślnie)
         return model.bot_weights
 
     def goto(self, model):
@@ -1666,7 +1667,7 @@ class Phantom(Mover):
         self.weights = None
 
     def route_weights(self, model):
-        # phantom: wspólny graf (jak w GAMA) albo własne wagi z własnej pamięci strachu
+        # phantom: wspólny graf albo własne wagi z własnej pamięci strachu (fear_scope = "individual")
         return self.weights if model.p["fear_scope"] == "individual" else None
 
     def distance_number(self, model, q):
@@ -2711,7 +2712,7 @@ def test_plain_bot_graph_ignores_fear():
     r = m.net.route((m.net.edges[0], 90.0), (m.net.edges[3], 99.0), bot.route_weights(m))
     assert any(leg[0] is m.net.edges[1] for leg in r)   # krótsza droga przez "straszny" odcinek
     m2 = _tiny_model({"bot_nb": 1, "aversion_strength": 5.0, "bot_graph": "weighted"})
-    assert m2.bots[0].route_weights(m2) is None           # weighted = jak w GAMA: wspólny graf ważony
+    assert m2.bots[0].route_weights(m2) is None           # weighted: wspólny graf ważony
     m3 = _tiny_model({"bot_nb": 1, "aversion_strength": 5.0})
     assert m3.bots[0].route_weights(m3) == m3.net.lengths  # domyślnie boty nie znają strachu phantoma
 

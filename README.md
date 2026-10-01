@@ -45,16 +45,19 @@ Symulacja zatrzymuje się po 10 000 cyklach; w cyklu 9999 wyniki są dopisywane 
 
 ### Rozszerzenia (pod artykuł do URBAN DESIGN International)
 
-Domyślne wartości nowych parametrów dają wyniki identyczne jak w GAMA, z jednym wyjątkiem: `bot_graph` domyślnie
-wynosi `plain`, bo boty nie powinny znać uczuć phantoma (decyzja autora, 28.09.2026). Zachowanie z GAMA: `bot_graph = weighted`.
+Domyślne wartości nowych parametrów dają wyniki identyczne jak w GAMA. `bot_graph` domyślnie wynosi `plain`, bo boty
+nie powinny znać uczuć phantoma (decyzja autora, 28.09.2026); od 30.09.2026 GAML ma to samo ustawienie
+(`bots_plain_graph = true`) i przełącznik `individual_fear` odpowiadający `fear_scope = individual`.
+Dawne zachowanie GAML: `bot_graph = weighted` i `bots_plain_graph = false`.
 
-- `bot_graph`: `plain` (domyślnie: boty wybierają trasy tylko po długości) albo `weighted` (jak w GAMA: boty chodzą po tym samym ważonym grafie, więc też omijają odcinki,
+- `bot_graph`: `plain` (domyślnie: boty wybierają trasy tylko po długości) albo `weighted` (w GAMA `bots_plain_graph = false`: boty chodzą po tym samym ważonym grafie, więc też omijają odcinki,
   na których phantom się bał).
 - Sieci z OSM/GeoJSON: po połączeniu kawałków, uproszczeniu i połączeniu ślepych końców przy placach odcinane są ślepe
   odnogi dłuższe niż 15 m (`prune_dead_ends`, stała `OSM_PRUNE_DEAD_END`; 0 wyłącza). Odnoga to łańcuch od ślepego końca do
   pierwszego skrzyżowania; powtarzane do skutku, więc znikają też całe ślepe drzewka. Końce do 8 m od obrysu parku to
   wyjścia: ich odnoga zostaje, a dłuższa niż 15 m jest przycinana od strony wyjścia do 15 m (decyzja autora, 30.09.2026).
-- `fear_scope`: `shared` (jak w GAMA) albo `individual` (każdy phantom ma własną pamięć strachu).
+- `fear_scope`: `shared` (domyślnie, w GAMA `individual_fear = false`) albo `individual` (każdy phantom ma własną pamięć
+  strachu; w GAMA `individual_fear = true`).
 - `planting = controlled`: sterowane nasadzenia przy stałej łącznej powierzchni krzewów (`bush_area_total`),
   w formie zwartych kęp (`bush_form = clumps`) albo pasów wzdłuż ścieżki (`band`).
   Część `bush_junction_share` stoi w narożnikach skrzyżowań, z krawędzią `bush_junction_distance` od węzła,

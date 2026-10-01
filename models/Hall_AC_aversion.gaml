@@ -42,6 +42,19 @@ global {
 	int reweight_every <- 20;
 	// <<< FEEDBACK
 
+	// Boty chodzą po grafie bez wag strachu (nie znają uczuć phantoma). false = dawne zachowanie: boty na grafie ważonym.
+	bool bots_plain_graph <- true;
+	graph bot_network;
+	// Pamięć strachu: false = wspólna na odcinku dla wszystkich phantomów, true = osobna dla każdego phantoma.
+	// Przy jednym phantomie oba warianty dają to samo.
+	bool individual_fear <- false;
+	// goto w GAMA traktuje wagi grafu także jako koszt RUCHU: na odcinku o wadze 10 × długość agent idzie 10× wolniej.
+	// Przy awersji phantom zwalniał więc na odcinkach, na których się bał, zostawał w pobliżu źródła strachu i odkładał
+	// kolejny strach (sprzężenie zwrotne; część phantomów prawie stawała). true = ruch z prędkością liczoną po długości,
+	// wagi strachu służą tylko do wyboru trasy (jak w porcie Pythona). false = dawne zachowanie.
+	bool move_by_length <- true;
+	map<road, float> length_weights;
+
 	reflex stop_after_steps {
         if (cycle >= 10000) {
            	ask phantom{
@@ -76,6 +89,8 @@ global {
 		// >>> FEEDBACK: graf z wagami zależnymi od pamięci strachu <<<
 		// weights: dla każdej krawędzi (road) waga = długość * (1 + aversion_strength * fear_memory).
 		// Przy fear_memory = 0 wszędzie -> waga = długość -> identyczny routing jak w oryginale.
+		bot_network <- as_edge_graph(road);
+		length_weights <- road as_map (each::each.shape.perimeter);
 		do rebuild_graph;
 		// <<< FEEDBACK
     }
@@ -84,12 +99,23 @@ global {
 	action rebuild_graph {
 		map<road, float> weights <- road as_map (each:: (each.shape.perimeter * (1.0 + aversion_strength * each.fear_memory)));
 		road_network <- as_edge_graph(road) with_weights weights;
+		if (individual_fear) {
+			ask phantom {
+				map<road, float> w <- road as_map (each:: (each.shape.perimeter * (1.0 + aversion_strength * ((my_fear contains_key each) ? my_fear[each] : 0.0))));
+				my_network <- as_edge_graph(road) with_weights w;
+			}
+		}
 	}
 
 	// Okresowa aktualizacja: zanikanie strachu na wszystkich odcinkach + przeliczenie grafu.
 	reflex update_aversion when: (cycle mod reweight_every) = 0 {
 		ask road {
 			fear_memory <- fear_memory * fear_decay;
+		}
+		ask phantom {
+			loop r over: my_fear.keys {
+				my_fear[r] <- my_fear[r] * fear_decay;
+			}
 		}
 		do rebuild_graph;
 	}
@@ -125,7 +151,11 @@ species bot skills: [moving] {
 			target <- any_location_in(one_of(road));
 		}
 		else {
-			do goto target: target on: road_network;
+			if (move_by_length) {
+				do goto target: target on: (bots_plain_graph ? bot_network : road_network) move_weights: length_weights;
+			} else {
+				do goto target: target on: (bots_plain_graph ? bot_network : road_network);
+			}
 		}
 	}
 
@@ -148,6 +178,9 @@ species phantom skills: [moving] {
     float total_vigilance  <- 0.0;
 
    point target;
+   // własna pamięć strachu i graf (tylko przy individual_fear = true)
+   map<road, float> my_fear <- [];
+   graph my_network;
 
    float vigilance <- 0.5;
    float adrenaline <- 0.5;
@@ -190,6 +223,9 @@ species phantom skills: [moving] {
    		road scared_road <- road closest_to self;
    		if (scared_road != nil) {
    			scared_road.fear_memory <- scared_road.fear_memory + fear_deposit;
+   			if (individual_fear) {
+   				my_fear[scared_road] <- ((my_fear contains_key scared_road) ? my_fear[scared_road] : 0.0) + fear_deposit;
+   			}
    		}
    		// <<< FEEDBACK
    	}
@@ -229,7 +265,11 @@ species phantom skills: [moving] {
 			target <- any_location_in(one_of(road));
 		}
 		else {
-			do goto target: target on: road_network;
+			if (move_by_length) {
+				do goto target: target on: (individual_fear ? my_network : road_network) move_weights: length_weights;
+			} else {
+				do goto target: target on: (individual_fear ? my_network : road_network);
+			}
 		}
 	}
 	// <<< FEEDBACK
@@ -272,6 +312,9 @@ experiment Hall  type: gui {
 	parameter "Siła awersji (0 = baseline)" var: aversion_strength;
 	parameter "Depozyt strachu" var: fear_deposit;
 	parameter "Zanikanie strachu" var: fear_decay;
+	parameter "Boty na grafie bez wag strachu" var: bots_plain_graph;
+	parameter "Osobna pamięć strachu phantomów" var: individual_fear;
+	parameter "Prędkość po długości (wagi tylko do trasy)" var: move_by_length;
 	// <<< FEEDBACK
 
     output {
