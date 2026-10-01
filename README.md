@@ -52,7 +52,8 @@ wynosi `plain`, bo boty nie powinny znać uczuć phantoma (decyzja autora, 28.09
   na których phantom się bał).
 - Sieci z OSM/GeoJSON: po połączeniu kawałków, uproszczeniu i połączeniu ślepych końców przy placach odcinane są ślepe
   odnogi dłuższe niż 15 m (`prune_dead_ends`, stała `OSM_PRUNE_DEAD_END`; 0 wyłącza). Odnoga to łańcuch od ślepego końca do
-  pierwszego skrzyżowania; powtarzane do skutku, więc znikają też całe ślepe drzewka (decyzja autora, 30.09.2026).
+  pierwszego skrzyżowania; powtarzane do skutku, więc znikają też całe ślepe drzewka. Końce do 8 m od obrysu parku to
+  wyjścia i zostają (decyzja autora, 30.09.2026).
 - `fear_scope`: `shared` (jak w GAMA) albo `individual` (każdy phantom ma własną pamięć strachu).
 - `planting = controlled`: sterowane nasadzenia przy stałej łącznej powierzchni krzewów (`bush_area_total`),
   w formie zwartych kęp (`bush_form = clumps`) albo pasów wzdłuż ścieżki (`band`).
