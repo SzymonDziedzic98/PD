@@ -728,8 +728,10 @@ def prune_dead_ends(roads, max_len=15.0, boundary=(), margin=8.0, snap=1e-3):
     (stopień >= 3). Odnogi dłuższe niż `max_len` znikają w całości, krótsze zostają. Powtarza do skutku: po odcięciu
     liści drzewko ślepych ścieżek może stać się jedną dłuższą odnogą. Osobne składowe bez skrzyżowania zostają.
     Końce nie dalej niż `margin` m od obrysu parku (od linii dowolnego pierścienia `boundary`, w środku albo na zewnątrz)
-    to wyjścia z parku, a nie ślepe uliczki: ich odnogi zostają. Końce daleko poza obrysem są odcinane.
-    Zwraca (polilinie, liczba odciętych odnóg, ich łączna długość w m)."""
+    to wyjścia z parku, a nie ślepe uliczki: odnoga zakończona wyjściem zostaje, ale jeśli jest dłuższa niż `max_len`,
+    wyjście przesuwa się w stronę skrzyżowania tak, by odnoga miała `max_len` m. Końce daleko poza obrysem są odcinane.
+    Zwraca (polilinie, liczba odciętych odnóg, ich łączna długość w m); liczba przyciętych wyjść jest w
+    prune_dead_ends.trimmed."""
     roads = [list(r) for r in roads]
     key = lambda q: (round(q[0] / snap), round(q[1] / snap))
     n_cut, len_cut = 0, 0.0
@@ -739,8 +741,6 @@ def prune_dead_ends(roads, max_len=15.0, boundary=(), margin=8.0, snap=1e-3):
     while True:
         ends = {}
         for i, r in enumerate(roads):
-            if key(r[0]) == key(r[-1]):
-                continue          # pętla zamknięta w jednym węźle nie zmienia, czy węzeł jest ślepym końcem
             for q in (r[0], r[-1]):
                 ends.setdefault(key(q), []).append(i)
         drop = set()
@@ -763,8 +763,48 @@ def prune_dead_ends(roads, max_len=15.0, boundary=(), margin=8.0, snap=1e-3):
                 n_cut += 1
                 len_cut += length
         if not drop:
-            return roads, n_cut, round(len_cut, 1)
+            break
         roads = [r for i, r in enumerate(roads) if i not in drop]
+    # wyjścia: odnoga dłuższa niż max_len zostaje przycięta od strony wyjścia do max_len
+    trimmed = 0
+    for k, idx in list(ends.items()):
+        if len(idx) != 1 or k not in exits:
+            continue
+        chain, node, length, i = [], k, 0.0, idx[0]
+        while True:
+            r = roads[i]
+            fwd = key(r[0]) == node                 # polilinia idzie od strony wyjścia
+            chain.append((i, fwd))
+            length += polyline_length(r)
+            node = key(r[-1]) if fwd else key(r[0])
+            nxt = [j for j in ends[node] if j != i]
+            if len(ends[node]) != 2 or not nxt or nxt[0] in [c[0] for c in chain]:
+                break
+            i = nxt[0]
+        if len(ends[node]) < 3 or length <= max_len:
+            continue
+        cut = length - max_len                       # tyle m od strony wyjścia znika
+        for i, fwd in chain:
+            pts = roads[i] if fwd else roads[i][::-1]
+            L = polyline_length(pts)
+            if cut >= L - 1e-9:
+                roads[i] = None
+                cut -= L
+                continue
+            acc, out = 0.0, None
+            for a, b in zip(pts, pts[1:]):
+                d = dist(a, b)
+                if out is None and acc + d >= cut:
+                    t = (cut - acc) / d if d > 0 else 0.0
+                    out = [(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t), b]
+                elif out is not None:
+                    out.append(b)
+                acc += d
+            roads[i] = out if fwd else out[::-1]
+            break
+        trimmed += 1
+    prune_dead_ends.trimmed = trimmed
+    return [r for r in roads if r], n_cut, round(len_cut, 1)
 
 
 def simplify_roads(roads, parallel=3.0, junction=6.0, step=1.0, min_spur=3.0):
@@ -1989,6 +2029,7 @@ def load_inputs(roads_data=None, obstacles_data=None, roads_name="", obstacles_n
         roads, LOAD_INFO["dead_ends_linked"] = link_dead_ends(roads, boundary)
         if OSM_PRUNE_DEAD_END > 0:
             roads, LOAD_INFO["dead_ends_cut"], LOAD_INFO["dead_ends_cut_m"] = prune_dead_ends(roads, OSM_PRUNE_DEAD_END, boundary)
+            LOAD_INFO["exits_trimmed"] = prune_dead_ends.trimmed
         LOAD_INFO["parts_after"] = len(set(_road_components(roads)))
     return roads, obstacles, boundary
 
@@ -2472,9 +2513,11 @@ def test_prune_dead_ends_cuts_long_spurs_only():
     roads, n, m = prune_dead_ends(loop + tree2, 15.0)
     assert n == 2 and len(roads) == len(loop) + 1, (n, len(roads))
     # odnoga kończąca się przy obrysie parku (wyjście) zostaje, ta sama odnoga daleko za obrysem znika
-    exit_spur = [[(50.0, 0.0), (80.0, 0.0)]]
+    exit_spur = [[(50.0, 0.0), (65.0, 0.0)], [(65.0, 0.0), (80.0, 0.0)]]    # 30 m do wyjścia przy obrysie
     roads, n, _m = prune_dead_ends(loop + exit_spur, 15.0, [[(84.0, -100.0), (84.0, 100.0)]])
-    assert n == 0, n
+    assert n == 0 and prune_dead_ends.trimmed == 1, n
+    spur = [r for r in roads if r not in loop]
+    assert len(spur) == 1 and abs(polyline_length(spur[0]) - 15.0) < 1e-6, spur   # wyjście przesunięte na 15 m
     roads, n, _m = prune_dead_ends(loop + exit_spur, 15.0, [[(200.0, -100.0), (200.0, 100.0)]])
     assert n == 1, n
     # osobny odcinek bez skrzyżowania zostaje
