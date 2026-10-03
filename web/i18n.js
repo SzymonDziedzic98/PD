@@ -84,6 +84,22 @@ const I18N = (() => {
 })();
 const L = (pl, en) => (I18N.lang === "en" ? en : pl);
 
+// Rozwijane menu alfabetycznie, wg bieżącego języka. Opcja z pustą wartością („—”) zostaje na górze,
+// „inna nazwa…” (wartość __custom) na dole; <select data-nosort> jest pomijany. Wybrana wartość się nie zmienia.
+function sortSelects(root = document) {
+  const coll = new Intl.Collator(I18N.lang, { numeric: true, sensitivity: "base" });
+  root.querySelectorAll("select:not([data-nosort])").forEach((sel) => {
+    const v = sel.value;
+    const opts = [...sel.options];
+    const top = opts.filter((o) => o.value === "");
+    const bottom = opts.filter((o) => o.value === "__custom");
+    const mid = opts.filter((o) => o.value !== "" && o.value !== "__custom")
+      .sort((a, b) => coll.compare(a.text, b.text));
+    sel.append(...top, ...mid, ...bottom);
+    sel.value = v;
+  });
+}
+
 // słownik PL → EN dla tekstów statycznych index.html (klucz: tekst po zwinięciu spacji)
 const I18N_EN = {
  "Ładowanie Pythona (Pyodide)…": "Loading Python (Pyodide)…",

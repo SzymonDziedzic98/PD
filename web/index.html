@@ -511,6 +511,7 @@ def _osm_geojson(path):
   $("bP1").value = "aversion_strength";
   renderSpec();
   buildForm();
+  sortSelects();
   $("loading").hidden = true;
   await initModel();
 }
@@ -1133,6 +1134,7 @@ I18N.onChange(() => {
   document.querySelectorAll("#paramForm summary").forEach((el) => { el.textContent = L(el.dataset.pl, I18N_CAT_EN[el.dataset.pl] || el.dataset.pl); });
   document.querySelectorAll("#paramForm label[data-key]").forEach((el) => { el.textContent = L(el.dataset.pl, I18N_PARAM_EN[el.dataset.key] || el.dataset.pl); });
   runLabel(); renderSpec(); renderNet(); renderStats(); renderLayerInfo(); renderOsmInfo(); sourceChanged();
+  sortSelects();
   if (chart) {
     chart.data.datasets[0].label = L("adrenalina", "adrenaline");
     chart.data.datasets[1].label = L("kortyzol", "cortisol");
@@ -1144,6 +1146,7 @@ I18N.onChange(() => {
 renderOsmInfo();
 sourceChanged();
 runLabel();
+sortSelects();
 
 boot();
 </script>
