@@ -1,5 +1,5 @@
 // Wspólne drobiazgi interfejsu (ten sam plik w psm-web i SIPD, web/ux.js):
-// przyciski wyboru pliku w języku strony, podpowiedzi na wyszarzonych przyciskach, napisy w pustych panelach,
+// przyciski wyboru pliku w języku strony, podpowiedzi na wyszarzonych przyciskach, napisy w pustych panelach, opisy parametrów,
 // zrozumiały komunikat, gdy Pyodide się nie wczyta, oraz zapamiętywanie ustawień i link z ustawieniami.
 // Wymaga i18n.js (L, I18N). Nie dotyka modelu: czyta i ustawia tylko pola formularza.
 "use strict";
@@ -16,6 +16,14 @@ const UX = (() => {
   color: var(--muted); font-size: 13px; pointer-events: none;
 }
 .load-error { display: grid; gap: 8px; }
+.label-help { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.label-help label[title] { cursor: help; }
+.help-btn {
+  flex: none; width: 16px; height: 16px; padding: 0; border-radius: 50%; border: 1px solid var(--line);
+  background: transparent; color: var(--muted); font: 600 10px/1 var(--font-body); cursor: pointer;
+}
+.help-btn[aria-expanded="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.param-help { grid-column: 1 / -1; margin: -2px 0 4px; }
 .load-error .btn { justify-self: start; }
 .btn.small { padding: 3px 10px; font-size: 12.5px; }
 .load-error .detail { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
@@ -90,6 +98,40 @@ const UX = (() => {
   }
   relabels.push(() => empties.forEach((e) => { e.n.textContent = L(e.pl, e.en); }));
   function ready(on = true) { empties.forEach((e) => { e.n.hidden = on; }); }
+
+  // ---------- opisy parametrów ----------
+  // Etykieta dostaje title (najechanie), a obok przycisk „?”, który rozwija opis pod polem (dotyk, czytniki ekranu).
+  // Etykieta trafia do <span class="label-help">, więc strona może dalej zmieniać jej textContent.
+  const helps = [];
+  function renderHelp(h) {
+    const t = h.getText();
+    h.lab.title = t; h.btn.title = t; h.p.textContent = t;
+    h.btn.setAttribute("aria-label", L("Opis: ", "Description: ") + h.lab.textContent);
+  }
+  function paramHelp(lab, getText) {
+    const wrap = document.createElement("span"); wrap.className = "label-help";
+    lab.before(wrap); wrap.append(lab);
+    const btn = document.createElement("button"); btn.type = "button"; btn.className = "help-btn"; btn.textContent = "?";
+    btn.setAttribute("aria-expanded", "false");
+    wrap.append(btn);
+    const p = document.createElement("p"); p.className = "hint param-help"; p.hidden = true;
+    p.id = (lab.htmlFor || "f" + helps.length) + "_help";
+    btn.setAttribute("aria-controls", p.id);
+    wrap.parentElement.append(p);
+    btn.addEventListener("click", () => { p.hidden = !p.hidden; btn.setAttribute("aria-expanded", String(!p.hidden)); });
+    const h = { lab, btn, p, getText };
+    helps.push(h);
+    renderHelp(h);
+  }
+  relabels.push(() => helps.forEach(renderHelp));
+  // wartość do opisu: liczby z przecinkiem po polsku, puste i logiczne słownie
+  function fmtValue(v) {
+    if (v === null || v === undefined || v === "") return L("puste", "empty");
+    if (typeof v === "boolean") return v ? L("włączone", "on") : L("wyłączone", "off");
+    if (Array.isArray(v)) return v.join(", ");
+    if (typeof v === "number" && I18N.lang === "pl") return String(v).replace(".", ",");
+    return String(v);
+  }
 
   // ---------- D: Pyodide się nie wczytał ----------
   function loadFailed(err) {
@@ -180,5 +222,5 @@ const UX = (() => {
     catch (e) { window.prompt(L("Skopiuj link:", "Copy the link:"), text); return false; }
   }
 
-  return { fileInputs, disabledHint, emptyNote, ready, loadFailed, settings, copy };
+  return { fileInputs, disabledHint, emptyNote, ready, loadFailed, settings, copy, paramHelp, fmtValue };
 })();

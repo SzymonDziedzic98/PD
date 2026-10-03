@@ -286,10 +286,12 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
           <option value="lhs">wrażliwość globalna (LHS)</option>
         </select></div>
     </div>
+    <p class="hint" data-mode="planting">Krzewy o stałej łącznej powierzchni w nasadzeniach sterowanych; zmienia się odstęp od skrzyżowań i udział w narożnikach. Każda kombinacja jest liczona tyle razy, ile powtórzeń.</p>
     <div class="controls" data-mode="planting">
       <div class="field wide"><label for="bDist">Odstęp od skrzyżowań (m)</label><input type="text" id="bDist" value="1, 4, 8, 12"></div>
       <div class="field wide"><label for="bShare">Udział w narożnikach</label><input type="text" id="bShare" value="0, 0.5, 1"></div>
     </div>
+    <p class="hint" data-mode="sweep" hidden>Wszystkie kombinacje podanych wartości jednego lub dwóch parametrów, każda tyle razy, ile powtórzeń.</p>
     <div class="controls" data-mode="sweep" hidden>
       <div class="field wide"><label for="bP1">Parametr 1</label><select id="bP1"></select></div>
       <div class="field wide"><label for="bV1">wartości</label><input type="text" id="bV1" value="0, 2.5, 5, 10"></div>
@@ -561,11 +563,18 @@ function buildForm() {
       } else { inp.type = "number"; inp.step = "any"; inp.value = v; inp.dataset.kind = "float"; }
       inp.addEventListener("change", onParamChange);
       row.append(lab, inp);
+      if (PARAM_HELP[key]) UX.paramHelp(lab, () => paramHelpText(key));
       fields.append(row);
     }
     det.append(fields);
     box.append(det);
   });
+}
+
+function paramHelpText(key) {
+  const h = PARAM_HELP[key];
+  return L(h[0], h[1]) + L(" Domyślnie: ", " Default: ") + UX.fmtValue(DEFAULTS[key]) + "." +
+    (RESTART.has(key) ? L(" Działa po ponownej inicjalizacji (↻).", " Takes effect after re-initialisation (↻).") : "");
 }
 
 function readParams() {
