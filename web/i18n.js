@@ -123,6 +123,8 @@ const I18N_EN = {
  "np. Park Tołpy": "e.g. Park Tołpy",
  "Pobierz z OSM": "Fetch from OSM",
  "Zapisz GeoJSON": "Save GeoJSON",
+ "Link z ustawieniami": "Link with settings",
+ "Przywróć domyślne": "Reset to defaults",
  "Wczytaj gotowy": "Load ready",
  "Ścieżki (np. Staszica_SHP_sciezki_01.shp)": "Paths (e.g. Staszica_SHP_sciezki_01.shp)",
  "Przeszkody (np. Staszica_SHP_krzaki_09.shp)": "Obstacles (e.g. Staszica_SHP_krzaki_09.shp)",

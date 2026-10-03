@@ -140,6 +140,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
 <script src="i18n.js"></script>
+<script src="ux.js"></script>
 </head>
 <body>
 
@@ -219,6 +220,9 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
       <p class="hint" id="srcInfo" data-noi18n></p>
     </div>
 
+    <div class="controls"><button class="btn small" id="btnLink">Link z ustawieniami</button>
+      <button class="btn small" id="btnReset">Przywróć domyślne</button></div>
+    <p class="hint" id="setInfo" data-noi18n></p>
     <div id="paramForm"></div>
   </aside>
 
@@ -383,8 +387,7 @@ async function boot() {
     $("loadMsg").textContent = L("Pobieranie interpretera Pythona…", "Downloading the Python interpreter…");
     py = await loadPyodide();
   } catch (e) {
-    $("loadMsg").textContent = L("Nie udało się pobrać Pyodide: ", "Could not download Pyodide: ") + e.message +
-      L(". Sprawdź połączenie z internetem.", ". Check your internet connection.");
+    UX.loadFailed(e);
     return;
   }
   let src = null;
@@ -512,6 +515,7 @@ def _osm_geojson(path):
   renderSpec();
   buildForm();
   sortSelects();
+  initSettings();
   $("loading").hidden = true;
   await initModel();
 }
@@ -730,6 +734,7 @@ async function initModel() {
     return;
   }
   hasModel = true;
+  UX.ready();
   histLen = 0;
   resetChart();
   renderNet();
@@ -1133,7 +1138,7 @@ function renderOsmInfo() {
 I18N.onChange(() => {
   document.querySelectorAll("#paramForm summary").forEach((el) => { el.textContent = L(el.dataset.pl, I18N_CAT_EN[el.dataset.pl] || el.dataset.pl); });
   document.querySelectorAll("#paramForm label[data-key]").forEach((el) => { el.textContent = L(el.dataset.pl, I18N_PARAM_EN[el.dataset.key] || el.dataset.pl); });
-  runLabel(); renderSpec(); renderNet(); renderStats(); renderLayerInfo(); renderOsmInfo(); sourceChanged();
+  runLabel(); renderSpec(); renderNet(); renderStats(); renderLayerInfo(); renderOsmInfo(); sourceChanged(); renderSetInfo();
   sortSelects();
   if (chart) {
     chart.data.datasets[0].label = L("adrenalina", "adrenaline");
@@ -1147,6 +1152,41 @@ renderOsmInfo();
 sourceChanged();
 runLabel();
 sortSelects();
+
+// ---------- wygoda: pliki, podpowiedzi, puste panele, zapamiętane ustawienia ----------
+UX.fileInputs();
+UX.disabledHint(["btnRun", "btnStep", "btnIso", "dlSummary", "dlSeries", "dlFear", "dlEdges"],
+  "Najpierw kliknij Inicjalizuj.", "Click Initialise first.");
+UX.disabledHint("btnOsmSave", "Najpierw wczytaj gotowy park albo pobierz go z OSM.", "Load a ready park or fetch one from OSM first.");
+UX.disabledHint("btnLib", "Gotowe są tylko parki z listy; inną nazwę pobierz z OSM.", "Only the listed parks are ready; fetch other names from OSM.");
+UX.disabledHint(["bDl", "bDlSum"], "Najpierw uruchom eksperyment.", "Run an experiment first.");
+UX.disabledHint("bStop", "Działa w trakcie eksperymentu.", "Active while an experiment runs.");
+UX.emptyNote($("map"), "Kliknij Inicjalizuj, żeby zobaczyć park i agentów.", "Click Initialise to see the park and the agents.");
+UX.emptyNote(document.querySelector(".chart-box"), "Wykres pojawi się po inicjalizacji.", "The chart appears after initialisation.");
+
+let SET = null, setMsg = null;
+function initSettings() {
+  SET = UX.settings("psm-web:ustawienia", ["speed", "seed"], ["#seed"]);
+  const n = SET.count;
+  setMsg = SET.restored === "link" ? [`Wczytano ustawienia z linku (zmienionych pól: ${n}).`, `Settings loaded from the link (${n} changed fields).`]
+    : SET.restored === "local" ? [`Przywrócono ostatnie ustawienia z tej przeglądarki (zmienionych pól: ${n}).`, `Restored your last settings from this browser (${n} changed fields).`]
+    : SET.restored === "badlink" ? ["Link z ustawieniami jest uszkodzony, więc go pominięto.", "The settings link is damaged, so it was ignored."]
+    : null;
+  renderSetInfo();
+}
+function renderSetInfo() { $("setInfo").textContent = setMsg ? L(setMsg[0], setMsg[1]) : ""; }
+$("btnReset").onclick = () => {
+  if (!SET) return;
+  SET.reset();
+  setMsg = ["Przywrócono ustawienia startowe. Kliknij Inicjalizuj, żeby ich użyć.", "Default settings restored. Click Initialise to use them."];
+  renderSetInfo();
+};
+$("btnLink").onclick = async () => {
+  if (!SET) return;
+  const ok = await UX.copy(SET.link());
+  setMsg = ok ? ["Skopiowano link z bieżącymi ustawieniami (z seedem).", "Copied a link with the current settings (including the seed)."] : null;
+  renderSetInfo();
+};
 
 boot();
 </script>
