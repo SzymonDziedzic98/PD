@@ -134,12 +134,13 @@ progress { width: 100%; height: 10px; accent-color: var(--park); }
 .msg.warn { border-color: var(--accent); }
 .loading { position: fixed; inset: 0; display: grid; place-items: center; background: var(--ground); z-index: 10; padding: 16px; }
 .loading .box { display: grid; gap: 10px; max-width: 420px; }
-ul.plain { margin: 0; padding-left: 18px; }
+ul.plain, ol.plain { margin: 0; padding-left: 18px; }
 code { font-family: var(--font-mono); font-size: 12.5px; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
 <script src="i18n.js"></script>
+<script src="ux.js"></script>
 </head>
 <body>
 
@@ -168,7 +169,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
   <button role="tab" aria-selected="true" data-tab="sim">Symulacja</button>
   <button role="tab" aria-selected="false" data-tab="batch">Eksperyment batch</button>
   <button role="tab" aria-selected="false" data-tab="tests">Testy</button>
-  <button role="tab" aria-selected="false" data-tab="about">O porcie</button>
+  <button role="tab" aria-selected="false" data-tab="about">O modelu</button>
 </nav>
 
 <!-- SYMULACJA -->
@@ -179,6 +180,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
       <button class="btn" id="btnRun" data-noi18n disabled>Start</button>
       <button class="btn" id="btnStep" disabled>Krok</button>
     </div>
+    <p class="hint">Skróty: <kbd>spacja</kbd> start/pauza, <kbd>→</kbd> krok</p>
     <div class="field"><label for="speed">Cykli na klatkę</label>
       <input type="number" id="speed" min="1" max="1000" value="10"></div>
     <div class="field"><label for="seed">Seed (puste = losowy)</label>
@@ -219,10 +221,14 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
       <p class="hint" id="srcInfo" data-noi18n></p>
     </div>
 
+    <div class="controls"><button class="btn small" id="btnLink">Link z ustawieniami</button>
+      <button class="btn small" id="btnReset">Przywróć domyślne</button></div>
+    <p class="hint" id="setInfo" data-noi18n></p>
     <div id="paramForm"></div>
   </aside>
 
   <main>
+    <div class="try-banner" id="tryBanner" hidden data-noi18n></div>
     <div id="messages"></div>
     <dl class="stats" id="stats"></dl>
     <div class="displays">
@@ -249,20 +255,22 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
         <figcaption><h3>Phantom 0 – psychofizjologia</h3></figcaption>
         <div class="chart-box"><canvas id="chart"></canvas></div>
         <div class="legend">
-          <span style="--c: #2f6fb2">adrenalina</span>
-          <span style="--c: #8a4fbf">kortyzol</span>
+          <span style="--c: #0072b2">adrenalina</span>
+          <span style="--c: #e69f00">kortyzol</span>
           <span style="--c: var(--ink)">czujność</span>
         </div>
       </figure>
     </div>
+    <div class="panel" id="cmpPanel" data-noi18n></div>
     <div class="panel">
       <h2>Pliki wynikowe</h2>
-      <p class="hint"><code>summary.csv</code> jak w GAMA (zapis w cyklu <code>end_cycle − 1</code>), szereg czasowy phantoma 0, pamięć strachu na odcinkach oraz mapa stresu i widoczności (<code>edges.csv</code>).</p>
+      <p class="hint"><code>summary.csv</code> jak w GAMA (zapis w cyklu <code>end_cycle − 1</code>), szereg czasowy phantoma 0, pamięć strachu na odcinkach oraz mapa stresu i widoczności (<code>edges.csv</code>). <code>config.json</code> zapisuje ustawienia przebiegu, seed, park i wersję modelu.</p>
       <div class="controls">
         <button class="btn" id="dlSummary" disabled>summary.csv</button>
         <button class="btn" id="dlSeries" disabled>timeseries.csv</button>
         <button class="btn" id="dlFear" disabled>fear_edges.csv</button>
         <button class="btn" id="dlEdges" disabled>edges.csv (stres i izowisty)</button>
+        <button class="btn" id="dlConfig" disabled>config.json</button>
       </div>
     </div>
   </main>
@@ -282,10 +290,12 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
           <option value="lhs">wrażliwość globalna (LHS)</option>
         </select></div>
     </div>
+    <p class="hint" data-mode="planting">Krzewy o stałej łącznej powierzchni w nasadzeniach sterowanych; zmienia się odstęp od skrzyżowań i udział w narożnikach. Każda kombinacja jest liczona tyle razy, ile powtórzeń.</p>
     <div class="controls" data-mode="planting">
       <div class="field wide"><label for="bDist">Odstęp od skrzyżowań (m)</label><input type="text" id="bDist" value="1, 4, 8, 12"></div>
       <div class="field wide"><label for="bShare">Udział w narożnikach</label><input type="text" id="bShare" value="0, 0.5, 1"></div>
     </div>
+    <p class="hint" data-mode="sweep" hidden>Wszystkie kombinacje podanych wartości jednego lub dwóch parametrów, każda tyle razy, ile powtórzeń.</p>
     <div class="controls" data-mode="sweep" hidden>
       <div class="field wide"><label for="bP1">Parametr 1</label><select id="bP1"></select></div>
       <div class="field wide"><label for="bV1">wartości</label><input type="text" id="bV1" value="0, 2.5, 5, 10"></div>
@@ -312,7 +322,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
     <p class="hint mono" id="bProgTxt" data-noi18n>—</p>
     <div class="table-wrap" id="bSummary"></div>
     <div class="table-wrap" id="bTable"></div>
-    <div class="controls"><button class="btn" id="bDl" disabled>results.csv</button><button class="btn" id="bDlSum" disabled>summary.csv</button></div>
+    <div class="controls"><button class="btn" id="bDl" disabled>results.csv</button><button class="btn" id="bDlSum" disabled>summary.csv</button><button class="btn" id="bDlCfg" disabled>config.json</button></div>
   </div>
 </section>
 
@@ -325,10 +335,41 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
   </div>
 </section>
 
-<!-- O PORCIE -->
+<!-- O MODELU -->
 <section data-panel="about" hidden>
   <div class="panel" style="max-width: 78ch">
-    <h2>Co odwzorowuje ten port</h2>
+    <h2>O modelu</h2>
+    <h3>Czym jest model</h3>
+    <p>PSM (Proxemic Stress Model) symuluje stres osoby idącej przez park. Jeden agent, phantom, idzie alejkami między innymi spacerowiczami (botami) i reaguje na to, jak blisko nich jest. Model pozwala porównać warianty nasadzeń i układu ścieżek, zanim powstaną w terenie.</p>
+    <h3>Jak działa</h3>
+    <ul class="plain">
+      <li>Wokół phantoma są cztery strefy Halla: intymna, osobista, społeczna i publiczna. Ich promienie to promienie Halla razy mnożnik stref (domyślnie 4).</li>
+      <li>W każdym cyklu phantom sprawdza, w której strefie jest każdy widoczny bot. Gdy bot przeskoczy do bliższej strefy, czujność rośnie z kwadratem tego skoku, więc nagłe pojawienie się kogoś tuż obok kosztuje dużo więcej niż powolne zbliżanie się.</li>
+      <li>Przeszkody, np. krzewy, zasłaniają widok. Bot ukryty za krzewem jest niewidoczny, dopóki zza niego nie wyjdzie, często od razu w bliskiej strefie. Dlatego krzewy w narożnikach skrzyżowań podnoszą stres.</li>
+      <li>Czujność dodaje się do adrenaliny, która powoli wygasa, a adrenalina podnosi kortyzol. Gdy adrenalina przekroczy próg lęku, phantom zostawia znacznik strachu i odkłada strach na odcinku, na którym stoi.</li>
+      <li>Przy awersji do tras phantom wybiera najkrótszą trasę ważoną pamięcią strachu, więc z czasem omija odcinki, na których się bał. Pamięć strachu powoli zanika.</li>
+    </ul>
+    <h3>Jak używać</h3>
+    <ol class="plain">
+      <li>Wybierz park: generowany, gotowy z biblioteki (OpenStreetMap, Wrocław) albo własne pliki.</li>
+      <li>Ustaw najważniejsze parametry w panelu po lewej; pozostałe są pod przyciskiem „Pokaż wszystkie parametry”. Najedź na nazwę parametru albo kliknij „?”, żeby zobaczyć opis.</li>
+      <li>Kliknij Inicjalizuj, potem Start (spacja) albo Krok (→).</li>
+      <li>Obserwuj mapę (pamięć strachu, stres albo izowisty na ścieżkach) i wykres adrenaliny, kortyzolu i czujności phantoma.</li>
+      <li>Żeby porównać dwa warianty, kliknij „Zapamiętaj ten przebieg” w panelu porównania, zmień ustawienia, kliknij Inicjalizuj i uruchom ponownie.</li>
+      <li>Pobierz pliki CSV razem z <code>config.json</code>, który zapisuje ustawienia przebiegu. Wiele przebiegów naraz policzysz w zakładce Eksperyment batch.</li>
+    </ol>
+    <h3>Na co zwrócić uwagę</h3>
+    <ul class="plain">
+      <li>Jeden przebieg to jedna losowa historia. Wnioski wyciągaj z kilku powtórzeń z różnymi seedami (zakładka Eksperyment batch).</li>
+      <li>Liczy się położenie krzewów względem skrzyżowań, a nie tylko ich łączna powierzchnia. Nasadzenia sterowane trzymają stałą powierzchnię, więc warianty różnią się tylko układem.</li>
+      <li>Efekt krzewu zależy od wielkości stref: krzew, który zasłania kogoś daleko poza strefą społeczną, niewiele zmienia.</li>
+      <li>Przy małej liczbie botów spotkań jest mało i różnice między wariantami giną w szumie. Układ nasadzeń oceniaj przy dużym obłożeniu parku.</li>
+      <li>Pole widoczności (izowista) mierzy, ile widać z danego miejsca, a nie to, czy ktoś wyłania się nagle zza przeszkody. Porównaj warstwę izowist z warstwą stresu.</li>
+    </ul>
+    <h3>Co wypróbować</h3>
+    <p class="hint">Każdy przycisk ustawia parametry na parku generowanym, inicjalizuje model z seedem 1 i uruchamia go do 10 000 cykli. Po pierwszym wariancie uruchom drugi: pierwszy zostanie zapamiętany i oba pojawią się na wykresie porównania w zakładce Symulacja.</p>
+    <div class="try-list" id="tryList" data-noi18n></div>
+    <h3>Co odwzorowuje ten port</h3>
     <p>Plik <code>psm.py</code> zawiera model z <code>models/Hall_AC_aversion.gaml</code>: sieć ścieżek jako graf ważony długością × (1 + aversion_strength × fear_memory), boty i phantomy idące najkrótszą ważoną trasą do losowego punktu, strefy Halla (1,8 / 4,8 / 14,4 / 40 m przy mnożniku 4) zasłaniane przez przeszkody, czujność, adrenalinę i kortyzol phantoma, próg lęku 11,5, znaczniki strachu, odkładanie i zanikanie pamięci strachu na odcinkach oraz zapis <code>summary.csv</code>.</p>
     <h3>Różnice względem GAMA</h3>
     <ul class="plain">
@@ -351,6 +392,11 @@ code { font-family: var(--font-mono); font-size: 12.5px; }
     <p>Park generowany to siatka alejek z łukami i pętlą obwodową, z krzewami w narożnikach skrzyżowań (ślepe narożniki) i wzdłuż alejek. Park z OpenStreetMap pobiera przeglądarka bezpośrednio z Overpass API. Oryginalne pliki <code>Staszica_SHP_*.shp</code> można wczytać jako własne pliki.</p>
     <h3>Uruchamianie poza przeglądarką</h3>
     <p><code>python psm.py --test</code>, <code>python psm.py --run --roads Staszica_SHP_sciezki_01.shp --obstacles Staszica_SHP_krzaki_09.shp</code>, <code>python psm.py --batch --aversion 0,2.5,5 --repeat 5</code>, <code>python psm.py --fetch-osm "Park Staszica" --out park.geojson</code>.</p>
+    <h3>Jak cytować</h3>
+    <p>Do czasu publikacji artykułu cytuj oprogramowanie z repozytorium (plik <code>CITATION.cff</code>). Artykuł z wynikami modelu jest w recenzji; odnośnik do niego dodamy po publikacji.</p>
+    <pre class="cite" id="citeText" data-noi18n></pre>
+    <div class="controls"><button class="btn small" id="btnCite">Kopiuj</button><button class="btn small" id="btnBib">Kopiuj BibTeX</button></div>
+    <p class="hint" id="modelVer" data-noi18n></p>
   </div>
 </section>
 
@@ -383,8 +429,7 @@ async function boot() {
     $("loadMsg").textContent = L("Pobieranie interpretera Pythona…", "Downloading the Python interpreter…");
     py = await loadPyodide();
   } catch (e) {
-    $("loadMsg").textContent = L("Nie udało się pobrać Pyodide: ", "Could not download Pyodide: ") + e.message +
-      L(". Sprawdź połączenie z internetem.", ". Check your internet connection.");
+    UX.loadFailed(e);
     return;
   }
   let src = null;
@@ -406,6 +451,8 @@ async function boot() {
 
 async function start(src) {
   py.FS.writeFile("/home/pyodide/psm.py", src);
+  MODEL_HASH = await UX.hashText(src);
+  renderVersion();
   py.runPython(`
 import sys, json
 sys.path.insert(0, "/home/pyodide")
@@ -511,6 +558,11 @@ def _osm_geojson(path):
   $("bP1").value = "aversion_strength";
   renderSpec();
   buildForm();
+  UX.basicAdvanced($("paramForm"), BASIC_KEYS);
+  UX.sliders(SLIDERS);
+  sortSelects();
+  initSettings();
+  UX.refresh();
   $("loading").hidden = true;
   await initModel();
 }
@@ -556,6 +608,7 @@ function buildForm() {
       } else { inp.type = "number"; inp.step = "any"; inp.value = v; inp.dataset.kind = "float"; }
       inp.addEventListener("change", onParamChange);
       row.append(lab, inp);
+      if (PARAM_HELP[key]) UX.paramHelp(lab, () => paramHelpText(key));
       fields.append(row);
     }
     det.append(fields);
@@ -563,9 +616,15 @@ function buildForm() {
   });
 }
 
+function paramHelpText(key) {
+  const h = PARAM_HELP[key];
+  return L(h[0], h[1]) + L(" Domyślnie: ", " Default: ") + UX.fmtValue(DEFAULTS[key]) + "." +
+    (RESTART.has(key) ? L(" Działa po ponownej inicjalizacji (↻).", " Takes effect after re-initialisation (↻).") : "");
+}
+
 function readParams() {
   const p = {};
-  document.querySelectorAll("#paramForm input, #paramForm select").forEach((inp) => {
+  document.querySelectorAll("#paramForm input[data-key], #paramForm select[data-key]").forEach((inp) => {
     const k = inp.dataset.key, kind = inp.dataset.kind;
     if (kind === "choice") p[k] = inp.value;
     else if (kind === "bool") p[k] = inp.checked;
@@ -581,11 +640,12 @@ function onParamChange(ev) {
   if (!hasModel) return;
   const key = ev.target.dataset.key;
   if (RESTART.has(key)) {
-    showMsg(L("Zmiana „", "The change to “") + ev.target.previousSibling.textContent +
+    showMsg(L("Zmiana „", "The change to “") + document.querySelector(`label[for="${ev.target.id}"]`).textContent +
       L("” zadziała po ponownej inicjalizacji.", "” takes effect after re-initialisation."), "warn");
     return;
   }
   py.globals.get("_set_params")(JSON.stringify(readParams()));
+  liveChanged = true;
   refresh(JSON.parse(py.globals.get("_advance")(0)));
 }
 
@@ -729,12 +789,18 @@ async function initModel() {
     return;
   }
   hasModel = true;
+  UX.ready();
+  runNo += 1;
+  lastConfig = simConfig();
+  liveChanged = false;
+  CMP.start(tryLabel || [`Przebieg ${runNo}`, `Run ${runNo}`], Object.assign({ park: parkLabel(), seed: $("seed").value.trim() || "–" }, readParams()));
+  tryLabel = null;
   histLen = 0;
   resetChart();
   renderNet();
   if (net.n_components > 1) showMsg(L("Sieć ma ", "The network has ") + net.n_components +
     L(" rozłączne części; agenci chodzą po największej.", " separate parts; agents walk on the largest one."), "warn");
-  ["btnRun", "btnStep", "dlSummary", "dlSeries", "dlFear", "dlEdges", "btnIso"].forEach((id) => $(id).disabled = false);
+  ["btnRun", "btnStep", "dlSummary", "dlSeries", "dlFear", "dlEdges", "dlConfig", "btnIso"].forEach((id) => $(id).disabled = false);
   isoVals = null;
   isoCmp = null;
   renderLayerInfo();
@@ -753,6 +819,9 @@ function refresh(res) {
   }
   if (res.hist.length) chart.update("none");
   $("stCycle").textContent = snap.cycle;
+  const m = snap.metrics;
+  CMP.record(snap.cycle, { total_adrenaline: m.total_adrenaline, fear_events: m.fear_events, feared_edges: m.feared_edges,
+    adrenaline: m.adrenaline, cortisol: m.cortisol });
   renderStats();
   draw();
   if (snap.finished) {
@@ -881,8 +950,8 @@ function resetChart() {
   chart = new Chart($("chart"), {
     type: "line",
     data: { labels: [], datasets: [
-      { label: L("adrenalina", "adrenaline"), data: [], borderColor: "#2f6fb2", borderWidth: 1.2, pointRadius: 0 },
-      { label: L("kortyzol", "cortisol"), data: [], borderColor: "#8a4fbf", borderWidth: 1.2, pointRadius: 0 },
+      { label: L("adrenalina", "adrenaline"), data: [], borderColor: "#0072b2", borderWidth: 1.2, pointRadius: 0 },
+      { label: L("kortyzol", "cortisol"), data: [], borderColor: "#e69f00", borderWidth: 1.2, pointRadius: 0 },
       { label: L("czujność", "vigilance"), data: [], borderColor: ink, borderWidth: 1, pointRadius: 0 },
     ] },
     options: {
@@ -948,8 +1017,10 @@ async function runBatch() {
     else spec.samples = parseInt($("bSamples").value, 10);
   } catch (e) { $("bProgTxt").textContent = L("Błąd: ", "Error: ") + e.message; return; }
   const plan = JSON.parse(py.globals.get("_plan")(mode, JSON.stringify(spec), JSON.stringify(base)));
+  batchConfig = { model: "PSM", model_file: "psm.py", model_version: MODEL_HASH, app: location.origin + location.pathname,
+    saved: new Date().toISOString(), batch: { mode, spec, cycles, runs: plan.length }, park: parkLabel(), params: base };
   batchStop = false;
-  $("bRun").disabled = true; $("bStop").disabled = false; $("bDl").disabled = true; $("bDlSum").disabled = true;
+  $("bRun").disabled = true; $("bStop").disabled = false; $("bDl").disabled = true; $("bDlSum").disabled = true; $("bDlCfg").disabled = true;
   $("bProg").max = plan.length; $("bProg").value = 0;
   py.runPython("_BROWS = []; _BSUM = []");
   const rows = [];
@@ -980,6 +1051,7 @@ async function runBatch() {
     ` · ${rows.length}/${plan.length} ${L("przebiegów", "runs")} · ${secs} s`;
   batchCsv = py.runPython("psm.dict_rows_csv(_BROWS)");
   $("bRun").disabled = false; $("bStop").disabled = true; $("bDl").disabled = rows.length === 0; $("bDlSum").disabled = rows.length === 0;
+  $("bDlCfg").disabled = rows.length === 0;
   hasModel = false;
   await initModel();
 }
@@ -1076,6 +1148,8 @@ $("bDlSum").onclick = () => download("summary.csv", py.runPython("psm.dict_rows_
 $("bMode").onchange = batchModeChanged;
 $("layer").onchange = () => draw();
 $("dlEdges").onclick = () => download("edges.csv", py.runPython("_M.edge_csv()"));
+$("dlConfig").onclick = () => { if (lastConfig) UX.downloadJSON("config.json", Object.assign({}, lastConfig, { cycle_at_download: snap ? snap.cycle : 0, params_changed_during_run: liveChanged })); };
+$("bDlCfg").onclick = () => { if (batchConfig) UX.downloadJSON("config.json", batchConfig); };
 $("btnIso").onclick = async () => {
   $("btnIso").disabled = true;
   $("layerInfo").textContent = L("Liczenie izowist…", "Computing isovists…");
@@ -1090,7 +1164,7 @@ $("btnIso").onclick = async () => {
 };
 $("tRun").onclick = runTests;
 window.addEventListener("resize", () => { if (net) { sizeCanvas(); draw(); } });
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => draw());
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { draw(); CMP.redraw(); });
 
 // ---------- język ----------
 let osmInfoSet = false, isoCmp = null, GAP = 25;
@@ -1132,7 +1206,8 @@ function renderOsmInfo() {
 I18N.onChange(() => {
   document.querySelectorAll("#paramForm summary").forEach((el) => { el.textContent = L(el.dataset.pl, I18N_CAT_EN[el.dataset.pl] || el.dataset.pl); });
   document.querySelectorAll("#paramForm label[data-key]").forEach((el) => { el.textContent = L(el.dataset.pl, I18N_PARAM_EN[el.dataset.key] || el.dataset.pl); });
-  runLabel(); renderSpec(); renderNet(); renderStats(); renderLayerInfo(); renderOsmInfo(); sourceChanged();
+  runLabel(); renderSpec(); renderNet(); renderStats(); renderLayerInfo(); renderOsmInfo(); sourceChanged(); renderSetInfo(); renderVersion();
+  sortSelects();
   if (chart) {
     chart.data.datasets[0].label = L("adrenalina", "adrenaline");
     chart.data.datasets[1].label = L("kortyzol", "cortisol");
@@ -1144,6 +1219,151 @@ I18N.onChange(() => {
 renderOsmInfo();
 sourceChanged();
 runLabel();
+sortSelects();
+
+// ---------- wygoda: pliki, podpowiedzi, puste panele, zapamiętane ustawienia ----------
+UX.fileInputs();
+UX.disabledHint(["btnRun", "btnStep", "btnIso", "dlSummary", "dlSeries", "dlFear", "dlEdges"],
+  "Najpierw kliknij Inicjalizuj.", "Click Initialise first.");
+UX.disabledHint("btnOsmSave", "Najpierw wczytaj gotowy park albo pobierz go z OSM.", "Load a ready park or fetch one from OSM first.");
+UX.disabledHint("btnLib", "Gotowe są tylko parki z listy; inną nazwę pobierz z OSM.", "Only the listed parks are ready; fetch other names from OSM.");
+UX.disabledHint(["bDl", "bDlSum"], "Najpierw uruchom eksperyment.", "Run an experiment first.");
+UX.disabledHint("bStop", "Działa w trakcie eksperymentu.", "Active while an experiment runs.");
+UX.emptyNote($("map"), "Kliknij Inicjalizuj, żeby zobaczyć park i agentów.", "Click Initialise to see the park and the agents.");
+UX.emptyNote(document.querySelector(".chart-box"), "Wykres pojawi się po inicjalizacji.", "The chart appears after initialisation.");
+
+let SET = null, setMsg = null;
+function initSettings() {
+  SET = UX.settings("psm-web:ustawienia", ["speed", "seed"], ["#seed"]);
+  const n = SET.count;
+  setMsg = SET.restored === "link" ? [`Wczytano ustawienia z linku (zmienionych pól: ${n}).`, `Settings loaded from the link (${n} changed fields).`]
+    : SET.restored === "local" ? [`Przywrócono ostatnie ustawienia z tej przeglądarki (zmienionych pól: ${n}).`, `Restored your last settings from this browser (${n} changed fields).`]
+    : SET.restored === "badlink" ? ["Link z ustawieniami jest uszkodzony, więc go pominięto.", "The settings link is damaged, so it was ignored."]
+    : null;
+  renderSetInfo();
+  UX.refresh();
+}
+function renderSetInfo() { $("setInfo").textContent = setMsg ? L(setMsg[0], setMsg[1]) : ""; }
+$("btnReset").onclick = () => {
+  if (!SET) return;
+  SET.reset();
+  UX.refresh();
+  setMsg = ["Przywrócono ustawienia startowe. Kliknij Inicjalizuj, żeby ich użyć.", "Default settings restored. Click Initialise to use them."];
+  renderSetInfo();
+};
+$("btnLink").onclick = async () => {
+  if (!SET) return;
+  const ok = await UX.copy(SET.link());
+  setMsg = ok ? ["Skopiowano link z bieżącymi ustawieniami (z seedem).", "Copied a link with the current settings (including the seed)."] : null;
+  renderSetInfo();
+};
+
+// ---------- najważniejsze parametry, suwaki, porównanie, skróty ----------
+const BASIC_KEYS = ["bot_nb", "hall_multiplier", "aversion_strength", "planting", "bush_form", "bush_junction_share",
+  "bush_junction_distance", "end_cycle"];
+const SLIDERS = { bot_nb: [0, 200, 1], hall_multiplier: [1, 6, 0.5], aversion_strength: [0, 20, 0.5],
+  bush_junction_share: [0, 1, 0.05], bush_junction_distance: [0, 30, 1] };
+const CMP = UX.compare($("cmpPanel"), [
+  { key: "total_adrenaline", pl: "Σ adrenaliny phantoma 0", en: "Σ adrenaline of phantom 0" },
+  { key: "fear_events", pl: "epizody lęku", en: "fear episodes" },
+  { key: "feared_edges", pl: "odcinki ze strachem", en: "segments with fear" },
+  { key: "adrenaline", pl: "adrenalina (bieżąca)", en: "adrenaline (current)" },
+  { key: "cortisol", pl: "kortyzol (bieżący)", en: "cortisol (current)" },
+]);
+let runNo = 0, tryLabel = null, lastConfig = null, batchConfig = null, liveChanged = false, MODEL_HASH = "";
+UX.disabledHint("dlConfig", "Najpierw kliknij Inicjalizuj.", "Click Initialise first.");
+UX.disabledHint("bDlCfg", "Najpierw uruchom eksperyment.", "Run an experiment first.");
+UX.shortcuts({
+  Space: () => { if (!$("btnRun").disabled) $("btnRun").click(); },
+  ArrowRight: () => { if (!$("btnStep").disabled) $("btnStep").click(); },
+}, () => !document.querySelector('section[data-panel="sim"]').hidden);
+
+function parkLabel() {
+  const k = $("srcKind").value;
+  return k === "generated" ? "generated (park_seed " + $("p_park_seed").value + ")"
+    : k === "osm" ? osmName || "OSM" : [$("roadsFile").files[0], $("obsFile").files[0]].filter(Boolean).map((f) => f.name).join(" + ");
+}
+// ustawienia przebiegu do config.json (te same, z którymi zainicjalizowano model)
+function simConfig() {
+  return { model: "PSM", model_file: "psm.py", model_version: MODEL_HASH, app: location.origin + location.pathname,
+    saved: new Date().toISOString(), seed: $("seed").value.trim() || null, park: parkLabel(), params: readParams() };
+}
+
+// ---------- Co wypróbować ----------
+const TRY_BASE = { planting: "controlled", bush_junction_share: 1, bush_junction_distance: 0, end_cycle: 10000 };
+const TRY = [
+  { title: ["Krzewy przy skrzyżowaniach: odstęp 0 i 20 m", "Shrubs at junctions: setback 0 and 20 m"],
+    what: ["Ta sama łączna powierzchnia krzewów, wszystkie w narożnikach skrzyżowań. Zmienia się tylko odstęp krzewów od węzła skrzyżowania.",
+           "The same total shrub area, all of it at junction corners. Only the setback of the shrubs from the junction node changes."],
+    look: ["Σ adrenaliny na wykresie porównania i znaczniki strachu na mapie.", "Σ adrenaline on the comparison chart and the fear markers on the map."],
+    expect: ["Przy odstępie 0 m Σ adrenaliny rośnie wielokrotnie szybciej niż przy 20 m. Krzew tuż przy skrzyżowaniu zasłania ludzi do chwili, gdy są już blisko.",
+             "With a 0 m setback, Σ adrenaline grows several times faster than with 20 m. A shrub right at the junction hides people until they are already close."],
+    base: TRY_BASE, variants: [
+      { label: ["odstęp 0 m", "setback 0 m"], params: { bush_junction_distance: 0 } },
+      { label: ["odstęp 20 m", "setback 20 m"], params: { bush_junction_distance: 20 } }] },
+  { title: ["Obłożenie parku: 20 i 80 botów", "Park occupancy: 20 and 80 bots"],
+    what: ["Krzewy w narożnikach skrzyżowań bez odstępu; zmienia się tylko liczba innych spacerowiczów.",
+           "Shrubs at junction corners with no setback; only the number of other walkers changes."],
+    look: ["Σ adrenaliny i liczba epizodów lęku.", "Σ adrenaline and the number of fear episodes."],
+    expect: ["Przy 80 botach Σ adrenaliny jest kilka razy wyższa i pojawiają się epizody lęku. Koszt złego nasadzenia rośnie z obłożeniem, więc warianty warto oceniać przy dużym ruchu.",
+             "With 80 bots, Σ adrenaline is several times higher and fear episodes appear. The cost of poor planting grows with occupancy, so variants are worth assessing at busy times."],
+    base: TRY_BASE, variants: [
+      { label: ["20 botów", "20 bots"], params: { bot_nb: 20 } },
+      { label: ["80 botów", "80 bots"], params: { bot_nb: 80 } }] },
+  { title: ["Mniejsze strefy: mnożnik ×1", "Smaller zones: multiplier ×1"],
+    what: ["Jak w pierwszym eksperymencie (odstęp 0 i 20 m), ale strefy Halla bez powiększenia.",
+           "As in the first experiment (setback 0 and 20 m), but with Hall's zones not enlarged."],
+    look: ["Różnicę między wariantami na wykresie porównania.", "The difference between the variants on the comparison chart."],
+    expect: ["Oba warianty dają prawie ten sam stres: przy małych strefach odsunięcie krzewów od skrzyżowań przestaje mieć znaczenie. Odstęp, od którego krzew przestaje szkodzić, zależy od wielkości stref.",
+             "Both variants give almost the same stress: with small zones, moving shrubs away from junctions no longer matters. The setback at which a shrub stops doing harm depends on the size of the zones."],
+    base: Object.assign({}, TRY_BASE, { hall_multiplier: 1 }), variants: [
+      { label: ["×1, odstęp 0 m", "×1, setback 0 m"], params: { bush_junction_distance: 0 } },
+      { label: ["×1, odstęp 20 m", "×1, setback 20 m"], params: { bush_junction_distance: 20 } }] },
+];
+function setParam(k, v) {
+  const el = $("p_" + k);
+  if (!el) return;
+  if (el.type === "checkbox") el.checked = !!v; else el.value = v === null ? "" : v;
+}
+async function runTry(it, i) {
+  document.querySelector('nav.tabs button[data-tab="sim"]').click();
+  running = false; runLabel();
+  if (i === 0) CMP.clear(); else CMP.keep();
+  Object.keys(DEFAULTS).forEach((k) => setParam(k, DEFAULTS[k]));
+  Object.entries(Object.assign({}, it.base, it.variants[i].params)).forEach(([k, v]) => setParam(k, v));
+  $("srcKind").value = "generated"; sourceChanged();
+  $("seed").value = "1";
+  $("speed").value = 200;
+  UX.refresh();
+  if (SET) SET.save();
+  tryLabel = it.variants[i].label;
+  setMsg = null; renderSetInfo();
+  UX.tryBanner($("tryBanner"), it, i, runTry);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  await initModel();
+  if (hasModel) { running = true; runLabel(); loop(); }
+}
+UX.tryCards($("tryList"), TRY, runTry);
+
+// ---------- jak cytować i wersja modelu ----------
+const CITE = "Dziedzic, S., Szurlej, M., & Kamiński, M. (2026). PSM: Proxemic Stress Model with route aversion " +
+  "(GAMA model, Python port and browser app) [Software]. https://github.com/SzymonDziedzic98/psm-web";
+function bibtex() {
+  return "@software{psm_web,\n  author = {Dziedzic, Szymon and Szurlej, Mikołaj and Kamiński, Maciej},\n" +
+    "  title = {{PSM}: Proxemic Stress Model with route aversion ({GAMA} model, Python port and browser app)},\n" +
+    "  year = {2026},\n  url = {https://github.com/SzymonDziedzic98/psm-web},\n" +
+    "  note = {Model file psm.py" + (MODEL_HASH ? ", " + MODEL_HASH : "") + "}\n}";
+}
+function renderVersion() {
+  $("citeText").textContent = CITE;
+  $("modelVer").textContent = MODEL_HASH
+    ? L(`Wersja modelu: psm.py, ${MODEL_HASH} (skrót pliku wczytanego przez tę stronę; ten sam skrót trafia do config.json).`,
+        `Model version: psm.py, ${MODEL_HASH} (hash of the file loaded by this page; the same hash goes into config.json).`)
+    : "";
+}
+$("btnCite").onclick = () => UX.copy(CITE);
+$("btnBib").onclick = () => UX.copy(bibtex());
+renderVersion();
 
 boot();
 </script>

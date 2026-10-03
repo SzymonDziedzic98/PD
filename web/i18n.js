@@ -84,6 +84,22 @@ const I18N = (() => {
 })();
 const L = (pl, en) => (I18N.lang === "en" ? en : pl);
 
+// Rozwijane menu alfabetycznie, wg bieżącego języka. Opcja z pustą wartością („—”) zostaje na górze,
+// „inna nazwa…” (wartość __custom) na dole; <select data-nosort> jest pomijany. Wybrana wartość się nie zmienia.
+function sortSelects(root = document) {
+  const coll = new Intl.Collator(I18N.lang, { numeric: true, sensitivity: "base" });
+  root.querySelectorAll("select:not([data-nosort])").forEach((sel) => {
+    const v = sel.value;
+    const opts = [...sel.options];
+    const top = opts.filter((o) => o.value === "");
+    const bottom = opts.filter((o) => o.value === "__custom");
+    const mid = opts.filter((o) => o.value !== "" && o.value !== "__custom")
+      .sort((a, b) => coll.compare(a.text, b.text));
+    sel.append(...top, ...mid, ...bottom);
+    sel.value = v;
+  });
+}
+
 // słownik PL → EN dla tekstów statycznych index.html (klucz: tekst po zwinięciu spacji)
 const I18N_EN = {
  "Ładowanie Pythona (Pyodide)…": "Loading Python (Pyodide)…",
@@ -93,7 +109,35 @@ const I18N_EN = {
  "Symulacja": "Simulation",
  "Eksperyment batch": "Batch experiments",
  "Testy": "Tests",
- "O porcie": "About the port",
+ "O modelu": "About the model",
+ "Skróty: <kbd>spacja</kbd> start/pauza, <kbd>→</kbd> krok": "Shortcuts: <kbd>space</kbd> run/pause, <kbd>→</kbd> step",
+ "Czym jest model": "What it is",
+ "Jak działa": "How it works",
+ "Jak używać": "How to use it",
+ "Na co zwrócić uwagę": "Things to notice",
+ "Co wypróbować": "Things to try",
+ "Jak cytować": "How to cite",
+ "Kopiuj": "Copy",
+ "Kopiuj BibTeX": "Copy BibTeX",
+ "PSM (Proxemic Stress Model) symuluje stres osoby idącej przez park. Jeden agent, phantom, idzie alejkami między innymi spacerowiczami (botami) i reaguje na to, jak blisko nich jest. Model pozwala porównać warianty nasadzeń i układu ścieżek, zanim powstaną w terenie.": "PSM (Proxemic Stress Model) simulates the stress of a person walking through a park. One agent, the phantom, walks along the paths among other walkers (bots) and reacts to how close they are. The model lets you compare planting and path layouts before they are built.",
+ "Wokół phantoma są cztery strefy Halla: intymna, osobista, społeczna i publiczna. Ich promienie to promienie Halla razy mnożnik stref (domyślnie 4).": "Around the phantom there are Hall's four zones: intimate, personal, social and public. Their radii are Hall's radii times the zone multiplier (4 by default).",
+ "W każdym cyklu phantom sprawdza, w której strefie jest każdy widoczny bot. Gdy bot przeskoczy do bliższej strefy, czujność rośnie z kwadratem tego skoku, więc nagłe pojawienie się kogoś tuż obok kosztuje dużo więcej niż powolne zbliżanie się.": "In every cycle the phantom checks which zone each visible bot is in. When a bot jumps to a closer zone, vigilance grows with the square of the jump, so someone appearing suddenly right nearby costs much more than someone approaching slowly.",
+ "Przeszkody, np. krzewy, zasłaniają widok. Bot ukryty za krzewem jest niewidoczny, dopóki zza niego nie wyjdzie, często od razu w bliskiej strefie. Dlatego krzewy w narożnikach skrzyżowań podnoszą stres.": "Obstacles such as shrubs block the view. A bot hidden behind a shrub stays invisible until it steps out, often straight into a close zone. This is why shrubs at junction corners raise stress.",
+ "Czujność dodaje się do adrenaliny, która powoli wygasa, a adrenalina podnosi kortyzol. Gdy adrenalina przekroczy próg lęku, phantom zostawia znacznik strachu i odkłada strach na odcinku, na którym stoi.": "Vigilance adds to adrenaline, which decays slowly, and adrenaline raises cortisol. When adrenaline crosses the fear threshold, the phantom leaves a fear marker and deposits fear on the path segment it stands on.",
+ "Przy awersji do tras phantom wybiera najkrótszą trasę ważoną pamięcią strachu, więc z czasem omija odcinki, na których się bał. Pamięć strachu powoli zanika.": "With route aversion, the phantom takes the shortest route weighted by fear memory, so over time it avoids segments where it was afraid. Fear memory slowly fades.",
+ "Wybierz park: generowany, gotowy z biblioteki (OpenStreetMap, Wrocław) albo własne pliki.": "Choose a park: generated, a ready one from the library (OpenStreetMap, Wrocław) or your own files.",
+ "Ustaw najważniejsze parametry w panelu po lewej; pozostałe są pod przyciskiem „Pokaż wszystkie parametry”. Najedź na nazwę parametru albo kliknij „?”, żeby zobaczyć opis.": "Set the key parameters in the left panel; the others are under the “Show all parameters” button. Hover over a parameter name or click “?” to see its description.",
+ "Kliknij Inicjalizuj, potem Start (spacja) albo Krok (→).": "Click Initialise, then Run (space) or Step (→).",
+ "Obserwuj mapę (pamięć strachu, stres albo izowisty na ścieżkach) i wykres adrenaliny, kortyzolu i czujności phantoma.": "Watch the map (fear memory, stress or isovists on the paths) and the chart of the phantom's adrenaline, cortisol and vigilance.",
+ "Żeby porównać dwa warianty, kliknij „Zapamiętaj ten przebieg” w panelu porównania, zmień ustawienia, kliknij Inicjalizuj i uruchom ponownie.": "To compare two variants, click “Keep this run” in the comparison panel, change the settings, click Initialise and run again.",
+ "Pobierz pliki CSV razem z <code>config.json</code>, który zapisuje ustawienia przebiegu. Wiele przebiegów naraz policzysz w zakładce Eksperyment batch.": "Download the CSV files together with <code>config.json</code>, which records the run's settings. Run many simulations at once in the Batch experiment tab.",
+ "Jeden przebieg to jedna losowa historia. Wnioski wyciągaj z kilku powtórzeń z różnymi seedami (zakładka Eksperyment batch).": "One run is one random history. Draw conclusions from several replicates with different seeds (Batch experiment tab).",
+ "Liczy się położenie krzewów względem skrzyżowań, a nie tylko ich łączna powierzchnia. Nasadzenia sterowane trzymają stałą powierzchnię, więc warianty różnią się tylko układem.": "What matters is where shrubs stand relative to junctions, not only their total area. Controlled planting keeps the area constant, so variants differ only in layout.",
+ "Efekt krzewu zależy od wielkości stref: krzew, który zasłania kogoś daleko poza strefą społeczną, niewiele zmienia.": "A shrub's effect depends on the size of the zones: a shrub that hides someone far outside the social zone changes little.",
+ "Przy małej liczbie botów spotkań jest mało i różnice między wariantami giną w szumie. Układ nasadzeń oceniaj przy dużym obłożeniu parku.": "With few bots there are few encounters, and differences between variants are lost in the noise. Assess planting layouts at high park occupancy.",
+ "Pole widoczności (izowista) mierzy, ile widać z danego miejsca, a nie to, czy ktoś wyłania się nagle zza przeszkody. Porównaj warstwę izowist z warstwą stresu.": "The visibility field (isovist) measures how much can be seen from a place, not whether someone suddenly emerges from behind an obstacle. Compare the isovist layer with the stress layer.",
+ "Każdy przycisk ustawia parametry na parku generowanym, inicjalizuje model z seedem 1 i uruchamia go do 10 000 cykli. Po pierwszym wariancie uruchom drugi: pierwszy zostanie zapamiętany i oba pojawią się na wykresie porównania w zakładce Symulacja.": "Each button sets the parameters on the generated park, initialises the model with seed 1 and runs it to 10,000 cycles. After the first variant, run the second: the first is kept and both appear on the comparison chart in the Simulation tab.",
+ "Do czasu publikacji artykułu cytuj oprogramowanie z repozytorium (plik <code>CITATION.cff</code>). Artykuł z wynikami modelu jest w recenzji; odnośnik do niego dodamy po publikacji.": "Until the article is published, cite the software from the repository (the <code>CITATION.cff</code> file). The article with the model's results is under review; a link will be added after publication.",
  "Inicjalizuj": "Initialise",
  "Krok": "Step",
  "Cykli na klatkę": "Cycles per frame",
@@ -107,6 +151,10 @@ const I18N_EN = {
  "np. Park Tołpy": "e.g. Park Tołpy",
  "Pobierz z OSM": "Fetch from OSM",
  "Zapisz GeoJSON": "Save GeoJSON",
+ "Link z ustawieniami": "Link with settings",
+ "Przywróć domyślne": "Reset to defaults",
+ "Krzewy o stałej łącznej powierzchni w nasadzeniach sterowanych; zmienia się odstęp od skrzyżowań i udział w narożnikach. Każda kombinacja jest liczona tyle razy, ile powtórzeń.": "Shrubs of constant total area in controlled planting; the setback from junctions and the share at corners vary. Each combination runs as many times as the repeats.",
+ "Wszystkie kombinacje podanych wartości jednego lub dwóch parametrów, każda tyle razy, ile powtórzeń.": "All combinations of the given values of one or two parameters, each as many times as the repeats.",
  "Wczytaj gotowy": "Load ready",
  "Ścieżki (np. Staszica_SHP_sciezki_01.shp)": "Paths (e.g. Staszica_SHP_sciezki_01.shp)",
  "Przeszkody (np. Staszica_SHP_krzaki_09.shp)": "Obstacles (e.g. Staszica_SHP_krzaki_09.shp)",
@@ -126,7 +174,7 @@ const I18N_EN = {
  "kortyzol": "cortisol",
  "czujność": "vigilance",
  "Pliki wynikowe": "Output files",
- "<code>summary.csv</code> jak w GAMA (zapis w cyklu <code>end_cycle − 1</code>), szereg czasowy phantoma 0, pamięć strachu na odcinkach oraz mapa stresu i widoczności (<code>edges.csv</code>).": "<code>summary.csv</code> as in GAMA (written at cycle <code>end_cycle − 1</code>), time series of phantom 0, fear memory per path segment, and the stress and visibility map (<code>edges.csv</code>).",
+ "<code>summary.csv</code> jak w GAMA (zapis w cyklu <code>end_cycle − 1</code>), szereg czasowy phantoma 0, pamięć strachu na odcinkach oraz mapa stresu i widoczności (<code>edges.csv</code>). <code>config.json</code> zapisuje ustawienia przebiegu, seed, park i wersję modelu.": "<code>summary.csv</code> as in GAMA (written at cycle <code>end_cycle − 1</code>), time series of phantom 0, fear memory per path segment, and the stress and visibility map (<code>edges.csv</code>). <code>config.json</code> records the run's settings, seed, park and model version.",
  "edges.csv (stres i izowisty)": "edges.csv (stress and isovists)",
  "Eksperymenty": "Experiments",
  "Liczone na parku i z parametrami z zakładki Symulacja. Warianty dzielą seedy powtórzeń (wspólne liczby losowe). Pełny przebieg GAMA to 10 000 cykli.": "Run on the park and with the parameters from the Simulation tab. Variants share the seeds of their repetitions (common random numbers). A full GAMA run is 10,000 cycles.",
@@ -160,8 +208,8 @@ const I18N_EN = {
  "Przy niespójnej sieci agenci chodzą tylko po największej składowej (w GAMA agent bez trasy stałby w miejscu).": "On a disconnected network agents walk only on the largest component (in GAMA an agent without a route would stand still).",
  "GeoJSON i OSM w stopniach są rzutowane lokalnie na metry (odwzorowanie równoodległościowe).": "GeoJSON and OSM data in degrees are projected locally to metres (equidistant projection).",
  "Rozszerzenia (domyślnie wyłączone, wyniki jak w GAMA)": "Extensions (off by default, results as in GAMA)",
- "<b>Graf botów</b>: <code>plain</code> domyślnie (boty nie znają strachu phantoma, wybierają trasy po długości) albo <code>weighted</code> jak w GAMA (boty też omijają odcinki, na których phantom się bał).": "<b>Bot graph</b>: <code>plain</code> by default (bots do not know the phantom's fear and choose routes by length) or <code>weighted</code> as in GAMA (bots also avoid segments where the phantom was afraid).",
- "<b>Pamięć strachu</b>: <code>shared</code> jak w GAMA albo <code>individual</code> (każdy phantom wybiera trasę według własnej pamięci; przy jednym phantomie wyniki identyczne).": "<b>Fear memory</b>: <code>shared</code> as in GAMA or <code>individual</code> (each phantom chooses its route by its own memory; with one phantom the results are identical).",
+ "<b>Graf botów</b>: <code>plain</code> domyślnie (boty nie znają strachu phantoma, wybierają trasy po długości) albo <code>weighted</code> (w GAMA <code>bots_plain_graph = false</code>; boty też omijają odcinki, na których phantom się bał).": "<b>Bot graph</b>: <code>plain</code> by default (bots do not know the phantom's fear and choose routes by length) or <code>weighted</code> (in GAMA <code>bots_plain_graph = false</code>; bots also avoid segments where the phantom was afraid).",
+ "<b>Pamięć strachu</b>: <code>shared</code> albo <code>individual</code> (w GAMA <code>individual_fear</code>) (każdy phantom wybiera trasę według własnej pamięci; przy jednym phantomie wyniki identyczne).": "<b>Fear memory</b>: <code>shared</code> or <code>individual</code> (in GAMA <code>individual_fear</code>) (each phantom chooses its route by its own memory; with one phantom the results are identical).",
  "<b>Nasadzenia sterowane</b>: krzewy o stałej łącznej powierzchni, część w narożnikach skrzyżowań (odstęp od węzła = zmienna projektowa), reszta wzdłuż ścieżek poza strefą skrzyżowania. Działa na każdej sieci, także OSM i SHP.": "<b>Controlled planting</b>: shrubs of constant total area, part at junction corners (setback from the node = design variable), the rest along paths outside the junction zone. Works on any network, including OSM and SHP.",
  "<b>Mapa stresu</b>: średnia adrenalina, suma czujności i epizody lęku phantoma na każdym odcinku.": "<b>Stress map</b>: mean adrenaline, summed vigilance and fear episodes of the phantom on each segment.",
  "<b>Izowisty</b>: pole widoczności (promień = strefa publiczna) co 5 m wzdłuż ścieżek i korelacja rang ze stresem na odcinkach.": "<b>Isovists</b>: visible area (radius = public zone) every 5 m along paths and its rank correlation with stress per segment.",
@@ -178,7 +226,7 @@ const I18N_EN = {
 const I18N_CAT_EN = {
   "Populacja": "Population", "Strefy Halla": "Hall zones", "Psychofizjologia": "Psychophysiology",
   "Awersja do tras": "Route aversion", "Warianty mechaniki": "Mechanism variants", "Nasadzenia": "Planting",
-  "Przebieg": "Run", "Park generowany": "Generated park",
+  "Przebieg": "Run", "Park generowany": "Generated park", "Najważniejsze parametry": "Key parameters",
 };
 const I18N_PARAM_EN = {
   bot_nb: "Number of bots", phantom_nb: "Number of phantoms", phantom_speed_kmh: "Phantom speed (km/h)",
@@ -200,4 +248,75 @@ const I18N_PARAM_EN = {
   junction_zone: "Junction zone (m)",
   end_cycle: "End (cycle)", step_min: "Step (min)",
   park_seed: "Park seed", park_width: "Width (m)", park_height: "Height (m)", park_bushes: "Number of shrubs",
+};
+
+// opisy parametrów (podpowiedź po najechaniu na etykietę i po kliknięciu „?”): klucz -> [pl, en].
+// Wartość domyślną i znak ↻ dopisuje strona. Opisy na podstawie src/psm.py; przy zmianie modelu sprawdź je.
+const PARAM_HELP = {
+  bot_nb: ["Liczba botów, czyli innych spacerowiczów, których phantom mija na ścieżkach. Więcej botów to więcej bodźców i wyższa adrenalina.",
+    "Number of bots, i.e. other walkers the phantom meets on the paths. More bots mean more stimuli and higher adrenaline."],
+  phantom_nb: ["Liczba phantomów, czyli agentów, których stres jest mierzony. Każdy ma własną czujność, adrenalinę i kortyzol; wykres pokazuje phantoma 0.",
+    "Number of phantoms, i.e. agents whose stress is measured. Each has its own vigilance, adrenaline and cortisol; the chart shows phantom 0."],
+  phantom_speed_kmh: ["Prędkość marszu phantoma po sieci ścieżek.", "Walking speed of the phantom on the path network."],
+  bot_speed_kmh: ["Średnia prędkość marszu botów.", "Mean walking speed of the bots."],
+  bot_speed_sd: ["Rozrzut prędkości botów: odchylenie standardowe (m/s) rozkładu normalnego wokół średniej.",
+    "Spread of bot speeds: standard deviation (m/s) of a normal distribution around the mean."],
+  hall_multiplier: ["Mnoży bazowe promienie stref Halla (0,45 / 1,2 / 3,6 / 10 m). Przy 4 strefy mają 1,8 / 4,8 / 14,4 / 40 m. Puste pola stref poniżej biorą wartość z mnożnika.",
+    "Multiplies Hall's base zone radii (0.45 / 1.2 / 3.6 / 10 m). At 4 the zones are 1.8 / 4.8 / 14.4 / 40 m. Empty zone fields below take their value from the multiplier."],
+  intimate: ["Promień strefy intymnej (m). Gdy bot przechodzi do bliższej strefy niż w poprzednim cyklu, czujność phantoma rośnie, tym mocniej, im większy skok. Puste = 0,45 m × mnożnik.",
+    "Radius of the intimate zone (m). When a bot moves into a closer zone than in the previous cycle, the phantom's vigilance rises, more so for a bigger jump. Empty = 0.45 m × multiplier."],
+  personal: ["Promień strefy osobistej (m). Puste = 1,2 m × mnożnik.", "Radius of the personal zone (m). Empty = 1.2 m × multiplier."],
+  social: ["Promień strefy społecznej (m). Puste = 3,6 m × mnożnik.", "Radius of the social zone (m). Empty = 3.6 m × multiplier."],
+  public: ["Promień strefy publicznej (m): dalszych botów phantom nie zauważa, podobnie jak botów zasłoniętych przeszkodą. Puste = 10 m × mnożnik.",
+    "Radius of the public zone (m): the phantom ignores bots further away and bots hidden behind obstacles. Empty = 10 m × multiplier."],
+  adrenaline_threshold: ["Gdy adrenalina phantoma przekroczy ten próg, phantom się boi: zostawia znacznik strachu i odkłada strach na odcinku, na którym stoi.",
+    "When the phantom's adrenaline exceeds this threshold it is afraid: it leaves a fear marker and deposits fear on the segment it stands on."],
+  adrenaline_cooldown: ["Mnożnik adrenaliny w każdym cyklu, przed dodaniem czujności (0,99 = spadek o 1% na cykl). Bliżej 1 to wolniejsze uspokajanie.",
+    "Adrenaline multiplier each cycle, before vigilance is added (0.99 = 1% drop per cycle). Closer to 1 means slower calming down."],
+  cortisol_cooldown: ["Mnożnik kortyzolu w każdym cyklu (0,999 = spadek o 0,1% na cykl). Kortyzol reaguje wolniej niż adrenalina.",
+    "Cortisol multiplier each cycle (0.999 = 0.1% drop per cycle). Cortisol reacts more slowly than adrenaline."],
+  cortisol_gain: ["Jak mocno adrenalina podnosi kortyzol: kortyzol += wzmocnienie × adrenalina / (kortyzol + 1)².",
+    "How strongly adrenaline raises cortisol: cortisol += gain × adrenaline / (cortisol + 1)²."],
+  initial_level: ["Startowa czujność, adrenalina i kortyzol phantoma.", "Initial vigilance, adrenaline and cortisol of the phantom."],
+  fear_spacing: ["Nowy znacznik strachu powstaje tylko wtedy, gdy w tej odległości nie ma innego. Zmienia liczbę znaczników na mapie, nie pamięć strachu na odcinkach.",
+    "A new fear marker appears only if there is no other within this distance. It changes the number of markers on the map, not the fear memory on segments."],
+  aversion_strength: ["Jak mocno phantom omija odcinki, na których się bał: waga odcinka = długość × (1 + siła × pamięć strachu). 0 = brak awersji (baseline), trasy tylko po długości.",
+    "How strongly the phantom avoids segments where it was afraid: segment weight = length × (1 + strength × fear memory). 0 = no aversion (baseline), routes by length only."],
+  fear_deposit: ["Ile pamięci strachu dodaje każdy cykl, w którym phantom się boi, na odcinku, na którym stoi.",
+    "How much fear memory each fearful cycle adds to the segment the phantom stands on."],
+  fear_decay: ["Mnożnik pamięci strachu przy każdym przeliczeniu grafu (0,999 = zanik o 0,1%). Bliżej 1 to dłuższa pamięć.",
+    "Fear memory multiplier at each graph update (0.999 = 0.1% decay). Closer to 1 means longer memory."],
+  reweight_every: ["Co ile cykli pamięć strachu zanika i wagi grafu są przeliczane. Większa wartość liczy się szybciej, ale trasy reagują później.",
+    "How often (in cycles) fear memory decays and graph weights are recomputed. A larger value runs faster, but routes react later."],
+  bot_graph: ["plain: boty wybierają trasy tylko po długości i nie znają strachu phantoma. weighted: boty idą po tym samym ważonym grafie co phantom (w GAMA bots_plain_graph = false).",
+    "plain: bots choose routes by length only and do not know the phantom's fear. weighted: bots use the same weighted graph as the phantom (GAMA bots_plain_graph = false)."],
+  fear_scope: ["shared: pamięć strachu jest wspólna na odcinkach i wszystkie phantomy jej unikają. individual: każdy phantom unika tylko odcinków, na których sam się bał. Przy jednym phantomie wynik jest taki sam.",
+    "shared: fear memory is shared on segments and all phantoms avoid it. individual: each phantom avoids only segments where it was afraid itself. With one phantom the result is the same."],
+  planting: ["default: park generowany ma losowe krzewy, a park z pliku lub OSM swoje przeszkody. controlled: krzewy rozmieszczone według parametrów poniżej przy stałej łącznej powierzchni. none: bez przeszkód.",
+    "default: the generated park has random shrubs and a file or OSM park keeps its obstacles. controlled: shrubs placed by the parameters below at a constant total area. none: no obstacles."],
+  planting_seed: ["Seed losowania nasadzeń sterowanych; ten sam seed daje ten sam układ krzewów.",
+    "Seed for controlled planting; the same seed gives the same shrub layout."],
+  bush_area_total: ["Łączna powierzchnia krzewów w nasadzeniach sterowanych. Jest stała między wariantami, żeby porównywać tylko rozmieszczenie.",
+    "Total shrub area in controlled planting. It is kept constant across variants so that only the layout differs."],
+  bush_form: ["clumps: zwarte, okrągłe kępy. band: pasy wzdłuż ścieżek.", "clumps: compact round clumps. band: strips along the paths."],
+  bush_radius: ["Promień jednej kępy (forma clumps).", "Radius of one clump (clumps form)."],
+  bush_band_width: ["Szerokość pasa krzewów (forma band).", "Width of a shrub strip (band form)."],
+  bush_band_length: ["Długość jednego odcinka pasa krzewów (forma band).", "Length of one shrub strip (band form)."],
+  bush_junction_share: ["Część powierzchni krzewów w narożnikach skrzyżowań (0 = nic, 1 = całość). Reszta stoi wzdłuż ścieżek poza strefą skrzyżowania.",
+    "Share of the shrub area placed at junction corners (0 = none, 1 = all). The rest stands along paths outside the junction zone."],
+  bush_junction_distance: ["Odstęp krawędzi krzewu od węzła skrzyżowania. To główna zmienna projektowa: większy odstęp odsłania widok na skrzyżowaniu.",
+    "Distance from the shrub edge to the junction node. This is the main design variable: a larger setback opens the view at the junction."],
+  bush_path_offset: ["Odstęp krawędzi krzewu od osi ścieżki.", "Distance from the shrub edge to the path centreline."],
+  bush_setback_scope: ["own: odstęp liczony od skrzyżowania, przy którym stoi krzew. all: krzew musi być co najmniej tak daleko od każdego skrzyżowania.",
+    "own: the setback is measured from the shrub's own junction. all: the shrub must be at least this far from every junction."],
+  junction_zone: ["Promień strefy skrzyżowania: krzewy „przy ścieżce” stoją dalej niż tyle od skrzyżowań.",
+    "Radius of the junction zone: “along the path” shrubs stand further than this from junctions."],
+  end_cycle: ["Cykl, w którym przebieg się kończy i zapisuje summary.csv. 10 000 cykli po 0,3 s to ok. 50 minut spaceru.",
+    "Cycle at which the run ends and writes summary.csv. 10,000 cycles of 0.3 s is about 50 minutes of walking."],
+  step_min: ["Długość jednego cyklu w minutach (0,005 min = 0,3 s). Od niej zależy droga przebyta w cyklu.",
+    "Length of one cycle in minutes (0.005 min = 0.3 s). It sets the distance walked per cycle."],
+  park_seed: ["Seed generatora parku; inny seed daje inny układ alejek i krzewów.", "Seed of the park generator; another seed gives another layout of alleys and shrubs."],
+  park_width: ["Szerokość parku generowanego.", "Width of the generated park."],
+  park_height: ["Wysokość parku generowanego.", "Height of the generated park."],
+  park_bushes: ["Liczba krzewów w parku generowanym (przy nasadzeniach default).", "Number of shrubs in the generated park (with default planting)."],
 };
